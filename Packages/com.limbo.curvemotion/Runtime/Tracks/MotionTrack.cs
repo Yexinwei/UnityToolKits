@@ -67,6 +67,19 @@ namespace Limbo.CurveMotion
             }
         }
 
+        /// <summary>
+        /// 读取对象上该属性的当前值，作为预览/播放的初始值。对象上没有对应组件时返回 false。
+        /// 新增轨道类型时重写此方法和 <see cref="WriteValue"/>，编辑器预览即可支持。
+        /// </summary>
+        public virtual bool TryReadValue(GameObject target, out Vector4 value)
+        {
+            value = DefaultValue;
+            return false;
+        }
+
+        /// <summary>把求值结果写回对象。</summary>
+        public virtual void WriteValue(GameObject target, Vector4 value) { }
+
         public MotionClip AddClip(string anchor, float offset, float duration)
         {
             var clip = new MotionClip { anchor = anchor, offset = offset, duration = duration, value = DefaultValue };
