@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    在没有 Unity 的环境里编译并运行包的 Runtime 代码和 EditMode 测试。
+    UnityEngine 用 UnityStub.cs 里的最小桩代替，只覆盖 Runtime 实际用到的 API。
+    用法：dotnet test tools/verify
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Packages/com.limbo.curvemotion/Runtime/**/*.cs" Exclude="../../Packages/com.limbo.curvemotion/Runtime/AssemblyInfo.cs" />
+    <Compile Include="../../Packages/com.limbo.curvemotion/Tests/Runtime/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+  </ItemGroup>
+</Project>
