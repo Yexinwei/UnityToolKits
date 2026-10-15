@@ -5,6 +5,7 @@
 - Scene 视图路径编辑：点击选点、拖动移动，Smooth/Free 点的切线手柄，Shift+点击路径插入点，Delete 删除点，全部支持 Undo。
 - 预览：在目标对象上播放/暂停/拖动时间，包含路径与属性轨道；停止、保存场景、进入 Play 模式时自动还原对象。
 - 复制、导出、导入 JSON。
+- 测试场景：菜单 Tools/Curve Motion/Open Test Scene 一键生成 UI 金币与 3D 方块两个目标，并附两个示例动效（金币飞向钱包、方块弹跳）。
 - MotionEditing：插入/删除点时自动拆分或合并段时长，锚定在被删点上的片段与事件保持原绝对时间。
 - 轨道新增 TryReadValue/WriteValue，自定义轨道重写即可支持预览。
 

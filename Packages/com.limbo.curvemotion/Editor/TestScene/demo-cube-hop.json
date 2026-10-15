@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "generator": "com.limbo.curvemotion",
+  "name": "CubeHop",
+  "description": "方块向右连跳两次：第一跳高、空中翻一圈，第二跳低；每次落地压扁回弹。",
+  "target": "Transform",
+  "conventions": {
+    "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
+    "positionUnit": "Unity units (localPosition)",
+    "rotationUnit": "degrees (local euler angles)",
+    "timeUnit": "seconds",
+    "pathTiming": "Each segment moves at constant speed along its arc length, shaped by the segment ease.",
+    "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
+    "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
+    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent]."
+  },
+  "duration": 1.48,
+  "loop": {
+    "count": 1,
+    "type": "Restart"
+  },
+  "path": {
+    "points": [
+      {
+        "id": "start",
+        "type": "Corner",
+        "position": [0, 0, 0],
+        "inTangent": [0, 0, 0],
+        "outTangent": [0, 0, 0],
+        "time": 0
+      },
+      {
+        "id": "peak1",
+        "type": "Auto",
+        "position": [1.5, 2, 0],
+        "inTangent": [-0.5, 0, 0],
+        "outTangent": [0.5, 0, 0],
+        "time": 0.35
+      },
+      {
+        "id": "land1",
+        "type": "Corner",
+        "position": [3, 0, 0],
+        "inTangent": [0, 0, 0],
+        "outTangent": [0, 0, 0],
+        "time": 0.7
+      },
+      {
+        "id": "peak2",
+        "type": "Auto",
+        "position": [4, 1, 0],
+        "inTangent": [-0.33333, 0, 0],
+        "outTangent": [0.33333, 0, 0],
+        "time": 0.95
+      },
+      {
+        "id": "land2",
+        "type": "Corner",
+        "position": [5, 0, 0],
+        "inTangent": [0, 0, 0],
+        "outTangent": [0, 0, 0],
+        "time": 1.2
+      }
+    ],
+    "segments": [
+      {
+        "from": "start",
+        "to": "peak1",
+        "timing": "Duration",
+        "duration": 0.35,
+        "speed": 1,
+        "length": 2.55136,
+        "ease": {
+          "type": "OutQuad"
+        },
+        "desc": "起跳上升"
+      },
+      {
+        "from": "peak1",
+        "to": "land1",
+        "timing": "Duration",
+        "duration": 0.35,
+        "speed": 1,
+        "length": 2.55136,
+        "ease": {
+          "type": "InQuad"
+        },
+        "desc": "下落"
+      },
+      {
+        "from": "land1",
+        "to": "peak2",
+        "timing": "Duration",
+        "duration": 0.25,
+        "speed": 1,
+        "length": 1.44251,
+        "ease": {
+          "type": "OutQuad"
+        },
+        "desc": "第二跳上升"
+      },
+      {
+        "from": "peak2",
+        "to": "land2",
+        "timing": "Duration",
+        "duration": 0.25,
+        "speed": 1,
+        "length": 1.44251,
+        "ease": {
+          "type": "InQuad"
+        },
+        "desc": "第二跳下落"
+      }
+    ]
+  },
+  "tracks": [
+    {
+      "type": "rotation",
+      "name": "Rotation",
+      "enabled": true,
+      "mode": "Add",
+      "components": ["x", "y", "z"],
+      "clips": [
+        {
+          "anchor": "start",
+          "offset": 0,
+          "start": 0,
+          "end": 0.7,
+          "duration": 0.7,
+          "ease": {
+            "type": "InOutSine"
+          },
+          "value": [0, 0, -360],
+          "desc": "第一跳空中翻一圈"
+        }
+      ]
+    },
+    {
+      "type": "scale",
+      "name": "Scale",
+      "enabled": true,
+      "mode": "Multiply",
+      "components": ["x", "y", "z"],
+      "clips": [
+        {
+          "anchor": "land1",
+          "offset": 0,
+          "start": 0.7,
+          "end": 0.78,
+          "duration": 0.08,
+          "ease": {
+            "type": "OutQuad"
+          },
+          "value": [1.3, 0.7, 1],
+          "desc": "第一次落地压扁"
+        },
+        {
+          "anchor": "land1",
+          "offset": 0.08,
+          "start": 0.78,
+          "end": 0.95,
+          "duration": 0.17,
+          "ease": {
+            "type": "OutBack"
+          },
+          "value": [1, 1, 1],
+          "desc": "回弹"
+        },
+        {
+          "anchor": "land2",
+          "offset": 0,
+          "start": 1.2,
+          "end": 1.28,
+          "duration": 0.08,
+          "ease": {
+            "type": "OutQuad"
+          },
+          "value": [1.2, 0.8, 1],
+          "desc": "第二次落地压扁"
+        },
+        {
+          "anchor": "land2",
+          "offset": 0.08,
+          "start": 1.28,
+          "end": 1.48,
+          "duration": 0.2,
+          "ease": {
+            "type": "OutBack"
+          },
+          "value": [1, 1, 1],
+          "desc": "回弹"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "anchor": "land1",
+      "offset": 0,
+      "time": 0.7,
+      "name": "OnLand",
+      "message": "first landing"
+    },
+    {
+      "anchor": "land2",
+      "offset": 0,
+      "time": 1.2,
+      "name": "OnLand",
+      "message": "second landing"
+    }
+  ]
+}

@@ -186,7 +186,7 @@ namespace Limbo.CurveMotion.Editor
             }
         }
 
-        void SetAsset(MotionAsset asset)
+        internal void SetAsset(MotionAsset asset)
         {
             if (asset == m_Asset) return;
             StopPreview();
@@ -198,7 +198,7 @@ namespace Limbo.CurveMotion.Editor
             SceneView.RepaintAll();
         }
 
-        void SetTarget(Transform target)
+        internal void SetTarget(Transform target)
         {
             if (target == m_Target) return;
             bool wasPreviewing = m_Preview;
@@ -253,6 +253,7 @@ namespace Limbo.CurveMotion.Editor
             if (m_Asset == null)
             {
                 EditorGUILayout.HelpBox("选择一个 Motion Asset，或点“新建”。也可以在 Project 窗口双击 Motion Asset 打开。", MessageType.Info);
+                if (GUILayout.Button("打开测试场景（自带示例动效）")) TestSceneBuilder.OpenTestScene();
                 return;
             }
 

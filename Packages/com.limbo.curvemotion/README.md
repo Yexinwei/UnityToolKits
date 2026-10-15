@@ -21,6 +21,8 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 
 菜单 `Tools/Curve Motion/Editor`，或在 Project 窗口双击 Motion Asset。
 
+想直接试用：菜单 `Tools/Curve Motion/Open Test Scene`，会在 `Assets/CurveMotionTest/` 生成测试场景（UI 金币、3D 方块）和两个示例动效，并自动打开编辑器。`Rebuild Test Scene` 把它们恢复为默认内容。
+
 1. 点“新建”创建 Motion Asset（或拖入已有的）。
 2. 把场景里的对象拖到“预览目标”（或选中对象后点“用选中”）。路径从它的当前位置开始绘制。
 3. Scene 视图里编辑路径：点击选点，拖动坐标手柄移动；Smooth/Free 点有方形切线手柄；按住 Shift 在路径上点击插入点；Delete 删除选中点。
