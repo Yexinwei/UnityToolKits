@@ -1,0 +1,18 @@
+{
+    "name": "Limbo.CurveMotion.Editor",
+    "rootNamespace": "Limbo.CurveMotion.Editor",
+    "references": [
+        "Limbo.CurveMotion"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
