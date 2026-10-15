@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "generator": "com.limbo.curvemotion",
-  "name": "CubeHop",
-  "description": "方块向右连跳两次：第一跳高、空中翻一圈，第二跳低；每次落地压扁回弹。",
+  "name": "HeartHop",
+  "description": "爱心向右连跳两次：第一跳高、空中翻一圈，第二跳低；每次落地压扁回弹。",
   "target": "Transform",
   "conventions": {
     "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
