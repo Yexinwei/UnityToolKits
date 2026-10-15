@@ -10,7 +10,8 @@ using UnityEngine.UI;
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// 测试专用场景：一个 UI 金币、一个 3D 爱心，各配一个示例 Motion Asset，并在编辑器窗口中打开。
+    /// 测试专用场景：一个 UI 金币、一个 3D 爱心、一个 UI 钱包，配四个示例 Motion Asset，并在编辑器窗口中打开。
+    /// 其中两个是 UI/3D 混合示例（爱心飞进钱包、金币落到爱心上），预览目标和落点对象已经记好，双击资产即可预览。
     /// 场景与示例资产生成到工程的 Assets/CurveMotionTest/（git 包是只读的，包内的场景无法保存修改）。
     /// 示例动效来自包内同目录的 JSON，美术素材在 Art/；素材缺失时退回纯色方块，不影响测试。
     /// </summary>
@@ -23,8 +24,11 @@ namespace Limbo.CurveMotion.Editor
 
         const string CoinDemo = "demo-coin-fly";
         const string HopDemo = "demo-heart-hop";
+        const string HeartToWalletDemo = "demo-heart-to-wallet";
+        const string CoinToHeartDemo = "demo-coin-to-heart";
         const string CoinName = "UI Target (Coin)";
         const string HeartName = "3D Target (Heart)";
+        const string WalletName = "Wallet";
 
         /// <summary>场景内容变化时加 1；旧版本生成的场景会提示重建。记录在场景 .meta 的 userData 里。</summary>
         const string SceneVersion = "curvemotion-test-scene:2";
@@ -45,7 +49,12 @@ namespace Limbo.CurveMotion.Editor
             }
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
             EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            FocusDemo(LoadDemo(CoinDemo, false), LoadDemo(HopDemo, false));
+            var coinAsset = LoadDemo(CoinDemo, false);
+            var hopAsset = LoadDemo(HopDemo, false);
+            LoadDemo(HeartToWalletDemo, false);
+            LoadDemo(CoinToHeartDemo, false);
+            RegisterBindings(overwrite: false);
+            FocusDemo(coinAsset, hopAsset);
         }
 
         static bool IsCurrentVersion()
@@ -78,6 +87,8 @@ namespace Limbo.CurveMotion.Editor
             EnsureFolder();
             var coinAsset = LoadDemo(CoinDemo, resetAssets);
             var hopAsset = LoadDemo(HopDemo, resetAssets);
+            LoadDemo(HeartToWalletDemo, resetAssets);
+            LoadDemo(CoinToHeartDemo, resetAssets);
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             CreateGround();
@@ -86,8 +97,40 @@ namespace Limbo.CurveMotion.Editor
             EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.Refresh();
             MarkCurrentVersion();
+            RegisterBindings(overwrite: true); // 新场景里的对象 id 都变了
 
             FocusDemo(coinAsset, hopAsset);
+        }
+
+        /// <summary>
+        /// 给示例资产记下预览目标和落点对象，双击资产就能直接预览。场景必须已保存（对象才有稳定 id）。
+        /// overwrite 为 false 时只补记缺的，不覆盖用户自己换过的对象。
+        /// </summary>
+        static void RegisterBindings(bool overwrite)
+        {
+            var coin = FindTransform(CoinName);
+            var heart = FindTransform(HeartName);
+            var wallet = FindTransform(WalletName);
+            RegisterBinding(CoinDemo, coin, null, overwrite);
+            RegisterBinding(HopDemo, heart, null, overwrite);
+            RegisterBinding(HeartToWalletDemo, heart, wallet, overwrite);
+            RegisterBinding(CoinToHeartDemo, coin, heart, overwrite);
+        }
+
+        static void RegisterBinding(string demo, Transform mover, Transform end, bool overwrite)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<MotionAsset>($"{Folder}/{demo}.asset");
+            if (asset == null || mover == null) return;
+            if (!overwrite && PreviewBindings.TryLoad(asset, out var savedMover, out var savedEnd, out _)
+                && savedMover != null && (end == null || savedEnd != null))
+                return;
+            PreviewBindings.Save(asset, mover, end, null);
+        }
+
+        static Transform FindTransform(string name)
+        {
+            var go = GameObject.Find(name);
+            return go != null ? go.transform : null;
         }
 
         /// <summary>优先打开 UI 金币示例；工程没有 UGUI 时打开 3D 爱心示例。</summary>
@@ -202,7 +245,7 @@ namespace Limbo.CurveMotion.Editor
 
             // 钱包放在金币示例路径的终点（起点 + (420, 640)），方便目测路径是否对齐。
             var coinStart = new Vector2(-250f, -450f);
-            CreateImage(canvasGo.transform, "Wallet", coinStart + new Vector2(420f, 640f), new Vector2(180f, 90f), new Color(0.55f, 0.35f, 0.2f, 1f));
+            CreateImage(canvasGo.transform, WalletName, coinStart + new Vector2(420f, 640f), new Vector2(180f, 90f), new Color(0.55f, 0.35f, 0.2f, 1f));
 
             var coinSprite = AssetDatabase.LoadAssetAtPath<Sprite>($"{ArtFolder}/ic_coin.png");
             if (coinSprite == null) Debug.LogWarning($"[Curve Motion] 找不到 {ArtFolder}/ic_coin.png，金币改用纯色块。");

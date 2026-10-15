@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "generator": "com.limbo.curvemotion",
+  "name": "HeartToWallet",
+  "description": "3D 爱心弹起后飞进 UI 钱包：终点绑定钱包，跨 3D/UI 按屏幕位置对准；途中转一圈并缩小。",
+  "target": "Transform",
+  "conventions": {
+    "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
+    "positionUnit": "Unity units (localPosition)",
+    "rotationUnit": "degrees (local euler angles)",
+    "timeUnit": "seconds",
+    "pathTiming": "Each segment moves at constant speed along its arc length, shaped by the segment ease.",
+    "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
+    "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
+    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].",
+    "endTarget": "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. Then add (actualEnd - authoredEnd) * pathProgress to every evaluated position, where pathProgress is the travelled fraction of the total arc length (0 at the start, 1 at the end)."
+  },
+  "duration": 0.85,
+  "loop": {
+    "count": 1,
+    "type": "Restart"
+  },
+  "endTarget": {
+    "bound": true,
+    "kind": "RectTransform",
+    "hint": "UI 钱包",
+    "authoredEnd": [3.52, 2.69, 0]
+  },
+  "path": {
+    "points": [
+      {
+        "id": "start",
+        "type": "Auto",
+        "position": [0, 0, 0],
+        "inTangent": [0.05, -0.16667, 0],
+        "outTangent": [-0.05, 0.16667, 0],
+        "time": 0
+      },
+      {
+        "id": "lift",
+        "type": "Auto",
+        "position": [-0.3, 1, 0],
+        "inTangent": [-0.58667, -0.44833, 0],
+        "outTangent": [0.58667, 0.44833, 0],
+        "time": 0.3
+      },
+      {
+        "id": "wallet",
+        "type": "Auto",
+        "position": [3.52, 2.69, 0],
+        "inTangent": [-0.63667, -0.28167, 0],
+        "outTangent": [0.63667, 0.28167, 0],
+        "time": 0.85
+      }
+    ],
+    "segments": [
+      {
+        "from": "start",
+        "to": "lift",
+        "timing": "Duration",
+        "duration": 0.3,
+        "speed": 1,
+        "length": 1.2668,
+        "ease": {
+          "type": "OutQuad"
+        },
+        "desc": "向上弹起"
+      },
+      {
+        "from": "lift",
+        "to": "wallet",
+        "timing": "Duration",
+        "duration": 0.55,
+        "speed": 1,
+        "length": 4.18268,
+        "ease": {
+          "type": "InQuad"
+        },
+        "desc": "加速飞向 UI 钱包"
+      }
+    ]
+  },
+  "tracks": [
+    {
+      "type": "scale",
+      "name": "Scale",
+      "enabled": true,
+      "mode": "Multiply",
+      "components": ["x", "y", "z"],
+      "clips": [
+        {
+          "anchor": "start",
+          "offset": 0,
+          "start": 0,
+          "end": 0.3,
+          "duration": 0.3,
+          "ease": {
+            "type": "OutBack"
+          },
+          "value": [1.25, 1.25, 1.25],
+          "desc": "弹起时放大"
+        },
+        {
+          "anchor": "lift",
+          "offset": 0.1,
+          "start": 0.4,
+          "end": 0.85,
+          "duration": 0.45,
+          "ease": {
+            "type": "InQuad"
+          },
+          "value": [0.35, 0.35, 0.35],
+          "desc": "飞行中缩小"
+        }
+      ]
+    },
+    {
+      "type": "rotation",
+      "name": "Rotation",
+      "enabled": true,
+      "mode": "Add",
+      "components": ["x", "y", "z"],
+      "clips": [
+        {
+          "anchor": "start",
+          "offset": 0,
+          "start": 0,
+          "end": 0.85,
+          "duration": 0.85,
+          "ease": {
+            "type": "OutQuad"
+          },
+          "value": [0, 360, 0],
+          "desc": "边飞边绕 Y 轴转一圈"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "anchor": "wallet",
+      "offset": 0,
+      "time": 0.85,
+      "name": "OnHeartCollected",
+      "message": "heart reached wallet"
+    }
+  ]
+}

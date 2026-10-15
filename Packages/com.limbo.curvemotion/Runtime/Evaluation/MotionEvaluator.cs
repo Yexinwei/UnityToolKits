@@ -23,6 +23,8 @@ namespace Limbo.CurveMotion
 
         float[] m_SegmentDurations = Array.Empty<float>();
         float[] m_SegmentLengths = Array.Empty<float>();
+        float[] m_LengthBefore = Array.Empty<float>();
+        float m_TotalLength;
         float[][] m_LengthTables = Array.Empty<float[]>();
         Vector3[] m_Controls = Array.Empty<Vector3>();
         float[] m_PointTimes = Array.Empty<float>();
@@ -118,6 +120,8 @@ namespace Limbo.CurveMotion
             int segments = Math.Max(0, points.Count - 1);
             m_SegmentDurations = new float[segments];
             m_SegmentLengths = new float[segments];
+            m_LengthBefore = new float[segments];
+            m_TotalLength = 0f;
             m_LengthTables = new float[segments][];
             m_Controls = new Vector3[segments * 4];
             m_PointTimes = new float[points.Count];
@@ -135,6 +139,8 @@ namespace Limbo.CurveMotion
                 m_LengthTables[i] = table;
                 float length = table[table.Length - 1];
                 m_SegmentLengths[i] = length;
+                m_LengthBefore[i] = m_TotalLength;
+                m_TotalLength += length;
 
                 var seg = points[i].segment ?? new SegmentSettings();
                 float duration = seg.timing == TimingMode.Speed
@@ -243,10 +249,51 @@ namespace Limbo.CurveMotion
             return EvaluatePathPoint(localTime) - m_Data.points[0].position;
         }
 
+        /// <summary>
+        /// 带终点修正的位置：endCorrection = 实际终点 − 设计时终点（路径空间），按路径进度分摊，
+        /// 起点不变、终点恰好落在实际终点，中间的弧线形状保留。终点绑定（<see cref="EndTarget"/>）用它。
+        /// </summary>
+        public Vector3 EvaluatePosition(float localTime, Vector3 endCorrection)
+        {
+            return EvaluatePosition(localTime) + endCorrection * GetPathProgress(localTime);
+        }
+
+        /// <summary>设计时终点相对起点的偏移。</summary>
+        public Vector3 AuthoredEndOffset
+        {
+            get
+            {
+                var points = m_Data.points;
+                return points.Count > 0 ? points[points.Count - 1].position - points[0].position : Vector3.zero;
+            }
+        }
+
+        /// <summary>
+        /// 路径进度：已走过的弧长 / 总弧长。0 为起点，1 为终点；Back、Elastic 等缓动过冲时会略超出 0~1。
+        /// 路径总长为 0 时按时间比例。
+        /// </summary>
+        public float GetPathProgress(float localTime)
+        {
+            if (m_SegmentDurations.Length == 0) return 1f;
+            if (!Locate(localTime, out int segment, out float fraction)) return 0f;
+            if (m_TotalLength <= 1e-6f)
+                return PathDuration > 0f ? Math.Min(1f, localTime / PathDuration) : 1f;
+            return (m_LengthBefore[segment] + fraction * m_SegmentLengths[segment]) / m_TotalLength;
+        }
+
         Vector3 EvaluatePathPoint(float localTime)
         {
+            if (!Locate(localTime, out int segment, out float fraction)) return m_Data.points[0].position;
+            return PositionAtFraction(segment, fraction);
+        }
+
+        /// <summary>localTime 落在哪一段、段内经缓动后的弧长比例。在起点（或没有段）时返回 false。</summary>
+        bool Locate(float localTime, out int segment, out float fraction)
+        {
+            segment = 0;
+            fraction = 0f;
             int segments = m_SegmentDurations.Length;
-            if (segments == 0 || localTime <= 0f) return m_Data.points[0].position;
+            if (segments == 0 || localTime <= 0f) return false;
 
             float segStart = 0f;
             for (int i = 0; i < segments; i++)
@@ -256,13 +303,13 @@ namespace Limbo.CurveMotion
                 if (localTime < segStart + d || last)
                 {
                     float u = d > 0f ? (localTime - segStart) / d : 1f;
-                    var ease = m_Data.points[i].segment?.ease;
-                    float fraction = Easing.Evaluate(ease, u);
-                    return PositionAtFraction(i, fraction);
+                    segment = i;
+                    fraction = Easing.Evaluate(m_Data.points[i].segment?.ease, u);
+                    return true;
                 }
                 segStart += d;
             }
-            return m_Controls[m_Controls.Length - 1];
+            return false;
         }
 
         /// <summary>段内弧长比例（可超出 0~1，用于 Back/Elastic 的过冲）→ 位置。</summary>

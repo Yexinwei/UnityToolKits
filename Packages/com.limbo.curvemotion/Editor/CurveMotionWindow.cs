@@ -10,7 +10,7 @@ using UnityEngine;
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// 曲线运动编辑器主窗口：选择资产与预览目标、时间轴（路径段、事件、属性轨道）、选中项的参数、
+    /// 曲线运动编辑器主窗口：选择资产、预览目标与落点对象、时间轴（路径段、事件、属性轨道）、选中项的参数、
     /// 在场景里预览、导入导出 JSON。Scene 视图中的绘制与手柄见 <see cref="PathSceneEditor"/>，
     /// 时间轴的绘制与拖拽见 <see cref="TimelineView"/>。
     /// </summary>
@@ -18,6 +18,8 @@ namespace Limbo.CurveMotion.Editor
     {
         [SerializeField] MotionAsset m_Asset;
         [SerializeField] Transform m_Target;
+        [SerializeField] Transform m_EndTarget;
+        [SerializeField] Camera m_WorldCamera;
         [SerializeField] bool m_EditPath = true;
         [SerializeField] bool m_Preview;
         [SerializeField] bool m_LoopPreview;
@@ -37,6 +39,7 @@ namespace Limbo.CurveMotion.Editor
         [SerializeField] bool m_ShowSettings = true;
 
         bool m_Playing;
+        bool m_EndSyncFailed;
         double m_LastTick;
         MotionEvaluator m_Eval;
         readonly MotionPreview m_PreviewState = new MotionPreview();
@@ -73,6 +76,7 @@ namespace Limbo.CurveMotion.Editor
 
         internal MotionAsset Asset => m_Asset;
         internal Transform Target => m_Target;
+        internal Transform EndObject => m_EndTarget;
         internal bool EditPath => m_EditPath;
         internal int Selected => m_Selected;
         internal int SelectedTrack => m_SelTrack;
@@ -81,6 +85,15 @@ namespace Limbo.CurveMotion.Editor
         internal bool SnapTimeline => m_SnapTimeline;
         internal bool IsUiTarget => m_Asset != null && m_Asset.data.target == TargetKind.RectTransform;
         internal bool HasClipboard => s_ClipboardClip != null || s_ClipboardEvent != null;
+
+        /// <summary>终点正跟随落点对象：终点位置由落点对象决定，不能手动改。</summary>
+        internal bool IsEndLocked => m_Asset != null && m_Target != null && m_EndTarget != null && EndBinding.bound
+            && m_Asset.data.points.Count >= 2 && !m_EndTarget.IsChildOf(m_Target);
+
+        /// <summary>预览目标与落点对象一个是 UI、一个是 3D，终点按屏幕位置对准。</summary>
+        internal bool IsCrossSpace => MixedSpace.IsCrossSpace(m_Target, m_EndTarget);
+
+        internal EndTarget EndBinding => m_Asset.data.endTarget ?? (m_Asset.data.endTarget = new EndTarget());
 
         internal MotionEvaluator Evaluator
         {
@@ -463,6 +476,7 @@ namespace Limbo.CurveMotion.Editor
 
         void OnEditorUpdate()
         {
+            SyncEndToTarget();
             if (!m_Playing || m_Asset == null) return;
             double now = EditorApplication.timeSinceStartup;
             float dt = (float)(now - m_LastTick);
@@ -498,6 +512,16 @@ namespace Limbo.CurveMotion.Editor
             m_Eval = null;
             m_Selected = m_SelTrack = m_SelClip = m_SelEvent = -1;
             m_Time = 0f;
+            // 落点对象和相机跟着资产走；预览目标没记录时保留当前的。
+            m_EndTarget = null;
+            m_WorldCamera = null;
+            if (PreviewBindings.TryLoad(asset, out var mover, out var end, out var camera))
+            {
+                m_EndTarget = end;
+                m_WorldCamera = camera;
+                if (mover != null) SetTarget(mover);
+            }
+            SyncEndToTarget();
             Repaint();
             SceneView.RepaintAll();
         }
@@ -518,7 +542,83 @@ namespace Limbo.CurveMotion.Editor
                     MarkChanged();
                 }
             }
+            SaveBindings();
+            SyncEndToTarget();
             if (wasPreviewing) StartPreview();
+            SceneView.RepaintAll();
+        }
+
+        /// <summary>
+        /// 指定落点对象：动效改为终点绑定，路径终点自动对准它。可以是 UI 也可以是 3D 物体，类型不同时经屏幕坐标换算。
+        /// 传 null 只清掉预览用的对象，动效仍保留终点绑定（运行时由代码传入落点）。
+        /// </summary>
+        internal void SetEndTarget(Transform end)
+        {
+            if (end == m_EndTarget) return;
+            if (end != null && m_Target != null && end.IsChildOf(m_Target))
+            {
+                ShowNotification(new GUIContent("落点对象不能是预览目标本身或它的子节点"));
+                return;
+            }
+            m_EndTarget = end;
+            if (end != null && m_Asset != null)
+            {
+                var binding = EndBinding;
+                var kind = MixedSpace.IsUi(end) ? TargetKind.RectTransform : TargetKind.Transform;
+                if (!binding.bound || binding.kind != kind || string.IsNullOrEmpty(binding.hint))
+                {
+                    RecordUndo("Bind End Target");
+                    binding.bound = true;
+                    binding.kind = kind;
+                    if (string.IsNullOrEmpty(binding.hint)) binding.hint = end.name;
+                    MarkChanged();
+                }
+            }
+            SaveBindings();
+            SyncEndToTarget();
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        void SetWorldCamera(Camera camera)
+        {
+            if (camera == m_WorldCamera) return;
+            m_WorldCamera = camera;
+            SaveBindings();
+            SyncEndToTarget();
+        }
+
+        void SaveBindings()
+        {
+            if (m_Asset != null) PreviewBindings.Save(m_Asset, m_Target, m_EndTarget, m_WorldCamera);
+        }
+
+        /// <summary>
+        /// 终点跟随落点对象：每帧把最后一个路径点放到落点对象的位置（相对起点），所见即所得。
+        /// 这是编辑器里的做法；运行时和导出代码不改路径，而是按路径进度把终点偏差分摊到整条路径上（结果一样）。
+        /// 这里的改动不记 Undo：它由落点位置推导出来，撤销后下一帧会重新对准。
+        /// </summary>
+        void SyncEndToTarget()
+        {
+            if (!IsEndLocked)
+            {
+                m_EndSyncFailed = false;
+                return;
+            }
+            var startLocal = m_PreviewState.GetStartLocalPosition(m_Target);
+            var camera = MixedSpace.ResolveWorldCamera(m_WorldCamera);
+            bool ok = MixedSpace.TryGetEndOffset(m_Target, startLocal, m_EndTarget, camera, out var offset);
+            if (ok != !m_EndSyncFailed)
+            {
+                m_EndSyncFailed = !ok;
+                Repaint();
+            }
+            if (!ok) return;
+            if (!MotionEditing.SetEndOffset(m_Asset.data, offset, IsUiTarget ? 0.01f : 1e-4f)) return;
+            EditorUtility.SetDirty(m_Asset);
+            Evaluator?.Rebuild();
+            ApplyPreview();
+            Repaint();
             SceneView.RepaintAll();
         }
 
@@ -533,8 +633,10 @@ namespace Limbo.CurveMotion.Editor
         void StopPreview()
         {
             m_Playing = false;
+            bool wasActive = m_PreviewState.IsActive;
             m_Preview = false;
             m_PreviewState.End();
+            if (wasActive) RepaintGameView();
         }
 
         void TogglePlay()
@@ -555,6 +657,24 @@ namespace Limbo.CurveMotion.Editor
         {
             if (!m_Preview || !m_PreviewState.IsActive || Evaluator == null) return;
             m_PreviewState.Apply(Evaluator, LocalTime);
+            RepaintGameView();
+        }
+
+        static readonly Type s_GameViewType = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
+
+        /// <summary>非播放模式下改了对象，Game 视图不会自己刷新；UI 和 3D 叠在一起的效果要在 Game 视图里看。</summary>
+        static void RepaintGameView()
+        {
+            EditorApplication.QueuePlayerLoopUpdate();
+            if (s_GameViewType == null) return;
+            foreach (var view in Resources.FindObjectsOfTypeAll(s_GameViewType))
+                (view as EditorWindow)?.Repaint();
+        }
+
+        static void OpenGameView()
+        {
+            if (EditorApplication.ExecuteMenuItem("Window/General/Game")) return;
+            if (s_GameViewType != null) GetWindow(s_GameViewType).Show();
         }
 
         void ClampSelection()
@@ -662,18 +782,39 @@ namespace Limbo.CurveMotion.Editor
                 var target = (Transform)EditorGUILayout.ObjectField(
                     new GUIContent("预览目标", "场景里的对象。路径从它的当前位置开始绘制，预览时在它身上播放，结束自动还原。"),
                     m_Target, typeof(Transform), true);
-                if (target != m_Target) SetTarget(target);
+                // 换对象会改变下面显示哪些行（相机、提示），跳过本次剩余的绘制。
+                if (target != m_Target) { SetTarget(target); GUIUtility.ExitGUI(); }
                 using (new EditorGUI.DisabledScope(Selection.activeTransform == null))
                 {
-                    if (GUILayout.Button("用选中", GUILayout.Width(48))) SetTarget(Selection.activeTransform);
+                    if (GUILayout.Button("用选中", GUILayout.Width(48))) { SetTarget(Selection.activeTransform); GUIUtility.ExitGUI(); }
                 }
             }
 
-            if (m_Asset != null)
+            if (m_Asset == null) return;
+
+            using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField("对象类型",
-                    m_Asset.data.target == TargetKind.RectTransform ? "UI（anchoredPosition，单位像素）" : "Transform（localPosition，单位 Unity 单位）");
+                var end = (Transform)EditorGUILayout.ObjectField(
+                    new GUIContent("落点对象", "可选。指定后路径终点自动对准它，例如 3D 物体飞到 UI 图标上、UI 图片飞到 3D 模型上。" +
+                        "UI 与 3D 之间按屏幕位置对准，效果在 Game 视图里看。"),
+                    m_EndTarget, typeof(Transform), true);
+                if (end != m_EndTarget) { SetEndTarget(end); GUIUtility.ExitGUI(); }
+                using (new EditorGUI.DisabledScope(Selection.activeTransform == null))
+                {
+                    if (GUILayout.Button("用选中", GUILayout.Width(48))) { SetEndTarget(Selection.activeTransform); GUIUtility.ExitGUI(); }
+                }
             }
+
+            if (IsCrossSpace)
+            {
+                var camera = (Camera)EditorGUILayout.ObjectField(
+                    new GUIContent("3D 相机", "UI 与 3D 换算屏幕位置用的相机。留空自动用 Main Camera。"),
+                    m_WorldCamera, typeof(Camera), true);
+                if (camera != m_WorldCamera) SetWorldCamera(camera);
+            }
+
+            EditorGUILayout.LabelField("对象类型",
+                m_Asset.data.target == TargetKind.RectTransform ? "UI（anchoredPosition，单位像素）" : "Transform（localPosition，单位 Unity 单位）");
         }
 
         void DrawToolbar()
@@ -702,6 +843,9 @@ namespace Limbo.CurveMotion.Editor
                 }
                 m_LoopPreview = GUILayout.Toggle(m_LoopPreview, new GUIContent("循环预览", "预览一直循环播放（与动效本身的循环设置无关）"), GUILayout.Width(72));
                 GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("Game 视图", "打开 Game 视图。UI 和 3D 叠在一起的实际效果在这里看，预览时实时刷新。"),
+                        EditorStyles.miniButton, GUILayout.Width(72)))
+                    OpenGameView();
             }
 
             using (new EditorGUILayout.HorizontalScope())
@@ -754,6 +898,12 @@ namespace Limbo.CurveMotion.Editor
             if (m_Selected == 0)
             {
                 EditorGUILayout.HelpBox("起点固定在对象的初始位置，要改起点请直接移动对象。", MessageType.None);
+            }
+            else if (IsEndLocked && m_Selected == data.points.Count - 1)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.Vector3Field("位置（相对起点）", p.position - data.points[0].position);
+                EditorGUILayout.HelpBox($"终点跟随落点对象“{m_EndTarget.name}”。要手动改，先清空落点对象，或在动效设置里取消终点绑定。", MessageType.None);
             }
             else
             {
@@ -1019,7 +1169,7 @@ namespace Limbo.CurveMotion.Editor
         {
             var data = m_Asset.data;
             EditorGUILayout.Space();
-            m_ShowSettings = EditorGUILayout.Foldout(m_ShowSettings, "动效设置（名称、描述、循环）", true);
+            m_ShowSettings = EditorGUILayout.Foldout(m_ShowSettings, "动效设置（名称、描述、循环、终点绑定）", true);
             if (!m_ShowSettings) return;
 
             using (new EditorGUI.IndentLevelScope())
@@ -1054,6 +1204,36 @@ namespace Limbo.CurveMotion.Editor
                 var eval = Evaluator;
                 EditorGUILayout.LabelField("时长", $"单次 {eval.Duration:0.###}s，路径 {eval.PathDuration:0.###}s" +
                     (data.loop.count == 1 ? "" : data.loop.count < 0 ? "，无限循环" : $"，共 {data.loop.count} 次 {eval.TotalDuration:0.###}s"));
+
+                DrawEndBinding();
+            }
+        }
+
+        void DrawEndBinding()
+        {
+            var binding = EndBinding;
+            EditorGUILayout.Space(2);
+            EditorGUI.BeginChangeCheck();
+            bool bound = EditorGUILayout.Toggle(new GUIContent("终点绑定",
+                "开启后终点在运行时对准一个对象（由代码传入），当前终点只是设计参考：起点不动，整条路径按进度修正过去。"), binding.bound);
+            string hint = binding.hint ?? "";
+            var kind = binding.kind;
+            // 按改之前的值决定显示哪些行，保持本次事件的控件与 Layout 一致。
+            if (binding.bound)
+            {
+                hint = EditorGUILayout.TextField(new GUIContent("落点说明", "写给人和 AI 看，例如“顶部金币栏图标”"), hint);
+                using (new EditorGUI.DisabledScope(m_EndTarget != null))
+                    kind = (TargetKind)EditorGUILayout.EnumPopup(new GUIContent("落点类型", "RectTransform = UI，Transform = 3D。指定了落点对象时自动判断。"), kind);
+            }
+            if (EditorGUI.EndChangeCheck())
+            {
+                RecordUndo("Edit End Binding");
+                bool toggled = bound != binding.bound;
+                binding.bound = bound;
+                binding.hint = hint;
+                binding.kind = kind;
+                MarkChanged();
+                if (toggled) GUIUtility.ExitGUI();
             }
         }
 
@@ -1067,6 +1247,19 @@ namespace Limbo.CurveMotion.Editor
             for (int i = 0; i < m_Asset.data.tracks.Count; i++)
                 if (m_Asset.data.tracks[i] == null)
                     warnings.Add($"第 {i + 1} 条轨道的类型找不到（脚本被删或改名），可以在时间轴右键删除它");
+            if (IsEndLocked && m_EndSyncFailed)
+                warnings.Add(IsCrossSpace
+                    ? "落点对象换算不到屏幕位置：场景里没有可用的 3D 相机，或落点在相机背后。终点暂时停在上次的位置"
+                    : "落点对象的位置换算失败（UI 预览目标的父节点不是 RectTransform？）。终点暂时停在上次的位置");
+            if (m_EndTarget != null && m_Target != null && m_EndTarget.IsChildOf(m_Target))
+                warnings.Add("落点对象是预览目标本身或它的子节点，终点不跟随");
+
+            if (EndBinding.bound && m_EndTarget == null)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.HelpBox("这个动效的终点绑定了落点对象（" + (string.IsNullOrEmpty(EndBinding.hint) ? "未写说明" : EndBinding.hint) +
+                    "），但这里没指定。预览按设计时的终点播放；在上方“落点对象”里指定后，终点会自动对准它。", MessageType.Info);
+            }
             if (warnings.Count == 0) return;
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(string.Join("\n", warnings), MessageType.Warning);

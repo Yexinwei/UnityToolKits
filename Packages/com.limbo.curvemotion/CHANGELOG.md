@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-10-15
+- UI 与 3D 混合预览：窗口新增“落点对象”，路径终点自动对准它，可以是 UI 也可以是 3D 物体（3D 物体飞到 UI 上、UI 图片飞到 3D 模型上）。UI 与 3D 之间经屏幕坐标换算，3D 对象保持起点离相机的距离；跨 UI/3D 时可指定换算用的相机，默认 Main Camera。
+- 终点跟随：落点对象或预览目标移动、Game 视图尺寸变化时，终点实时对准；跟随时终点不能手动拖，Scene 视图在终点画出落点标记。
+- 预览时实时刷新 Game 视图，工具栏新增“Game 视图”按钮。
+- 预览目标、落点对象和相机按资产记在本机，重新打开资产时自动填回。
+- 数据：MotionData 新增 endTarget（bound、kind、hint），JSON 输出 endTarget 与 authoredEnd，并说明运行时的终点修正方法；MotionEvaluator 新增 GetPathProgress、EvaluatePosition(time, endCorrection)、AuthoredEndOffset；MotionEditing 新增 SetEndOffset。
+- 测试场景新增两个混合示例：demo-heart-to-wallet（3D 爱心飞进 UI 钱包）、demo-coin-to-heart（UI 金币落到 3D 爱心上），双击即可预览。
+
 ## [0.4.0] - 2026-10-15
 - 时间轴：标尺与播放头（点击/拖动定位）、路径段条（拖分界改段时长，速度模式反算速度）、事件行、每条属性轨道一行。
 - 属性轨道：添加、启用/停用、改名、排序、删除；片段双击添加、拖动移动、拖两端改时长，被覆盖部分半透明显示；移动后自动重新锚定到它前面最近的路径点。

@@ -61,6 +61,9 @@ namespace Limbo.CurveMotion
 
         public LoopSettings loop = new LoopSettings();
 
+        /// <summary>终点绑定：终点在运行时对准另一个对象，可以跨 UI 与 3D（例如 3D 物体飞到 UI 图标上）。</summary>
+        public EndTarget endTarget = new EndTarget();
+
         public static string NewId() => Guid.NewGuid().ToString("N").Substring(0, 8);
 
         public int FindPointIndex(string id)
@@ -115,6 +118,23 @@ namespace Limbo.CurveMotion
         public float offset;
         public string name = "Event";
         public string message;
+    }
+
+    /// <summary>
+    /// 终点绑定。bound 为 true 时，最后一个路径点只是设计时的参考位置：运行时换成落点对象的实际位置，
+    /// 起点不动，整条路径按走过的弧长比例逐渐修正过去（见 <see cref="MotionEvaluator.EvaluatePosition(float, Vector3)"/>）。
+    /// 落点对象是场景里的东西，不存进数据，由编辑器预览或运行时代码传入。
+    /// </summary>
+    [Serializable]
+    public class EndTarget
+    {
+        public bool bound;
+
+        /// <summary>落点对象的类型。与 <see cref="MotionData.target"/> 不同时，需要经过屏幕坐标换算。</summary>
+        public TargetKind kind = TargetKind.RectTransform;
+
+        /// <summary>写给人和 AI 看的落点说明，例如“顶部金币栏图标”。</summary>
+        public string hint;
     }
 
     [Serializable]

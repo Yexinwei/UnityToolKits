@@ -21,7 +21,7 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 
 菜单 `Tools/Curve Motion/Editor`，或在 Project 窗口双击 Motion Asset。
 
-想直接试用：菜单 `Tools/Curve Motion/Open Test Scene`，会在 `Assets/CurveMotionTest/` 生成测试场景（UI 金币、3D 爱心）和两个示例动效，并自动打开编辑器。`Rebuild Test Scene` 把它们恢复为默认内容。
+想直接试用：菜单 `Tools/Curve Motion/Open Test Scene`，会在 `Assets/CurveMotionTest/` 生成测试场景（UI 金币、UI 钱包、3D 爱心）和四个示例动效，并自动打开编辑器。其中 `demo-heart-to-wallet`（3D 爱心飞进 UI 钱包）和 `demo-coin-to-heart`（UI 金币落到 3D 爱心上）是 UI/3D 混合示例，双击资产即可预览。`Rebuild Test Scene` 把它们恢复为默认内容。
 
 1. 点“新建”创建 Motion Asset（或拖入已有的）。
 2. 把场景里的对象拖到“预览目标”（或选中对象后点“用选中”）。路径从它的当前位置开始绘制。
@@ -37,6 +37,16 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 7. 点“停止”、保存场景或进入 Play 模式时，对象自动还原。
 8. “复制 JSON”可直接粘贴给 AI；“导出/导入 JSON”读写文件。
 
+### UI 与 3D 混合（飞到另一个对象上）
+
+把终点要对准的对象拖到“落点对象”，动效就变成“终点绑定”：路径终点自动对准它，对象移动时实时跟随。
+
+- 预览目标和落点对象可以一个是 UI、一个是 3D 物体，例如 3D 物体飞到 UI 图标上、UI 图片飞到 3D 模型上。两者之间按屏幕位置换算，3D 物体保持起点离相机的距离；换算用的相机在“3D 相机”里指定，留空用 Main Camera。
+- UI 和 3D 在 Scene 视图里不在一处，实际效果请在 Game 视图里看（工具栏“Game 视图”按钮），预览时实时刷新。
+- 终点跟随时不能手动拖终点；要手动改，先清空落点对象，或在“动效设置”里关掉“终点绑定”。
+- 预览目标、落点对象和相机按资产记在本机，下次打开资产自动填回。
+- 运行时落点由代码传入，路径不需要重画：起点不动，整条路径按走过的弧长比例修正到实际终点（见下方代码示例与 JSON 里的 `conventions.endTarget`）。
+
 ## 代码里使用
 
 ```csharp
@@ -46,6 +56,9 @@ using Limbo.CurveMotion.Serialization;
 var data = MotionJson.FromJson(jsonText);
 var eval = new MotionEvaluator(data);
 Vector3 offset = eval.EvaluatePosition(eval.ToLocalTime(t));   // 相对起点的位置偏移
+
+// 终点绑定（data.endTarget.bound）：actualEnd 是落点对象换算到本对象父节点空间、相对起点的偏移
+Vector3 corrected = eval.EvaluatePosition(eval.ToLocalTime(t), actualEnd - eval.AuthoredEndOffset);
 ```
 
 JSON 格式示例：`Documentation~/sample-motion.json`。
