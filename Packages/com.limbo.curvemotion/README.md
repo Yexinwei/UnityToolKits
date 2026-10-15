@@ -21,6 +21,33 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 
 菜单 `Tools/Curve Motion/Editor`。
 
+## 代码里使用
+
+```csharp
+using Limbo.CurveMotion;
+using Limbo.CurveMotion.Serialization;
+
+var data = MotionJson.FromJson(jsonText);
+var eval = new MotionEvaluator(data);
+Vector3 offset = eval.EvaluatePosition(eval.ToLocalTime(t));   // 相对起点的位置偏移
+```
+
+JSON 格式示例：`Documentation~/sample-motion.json`。
+
+## 新增属性轨道
+
+```csharp
+[System.Serializable, MotionTrack("myProp", "My Prop")]
+public class MyPropTrack : MotionTrack
+{
+    public override int Dimension => 1;
+    public override ValueMode Mode => ValueMode.Absolute;
+    public override Vector4 DefaultValue => Vector4.zero;
+}
+```
+
+`typeId`（这里的 `myProp`）会写进 JSON，发布后不要改。
+
 ## 运行包内测试
 
 在项目 `Packages/manifest.json` 中加入：

@@ -1,7 +1,7 @@
 {
   "name": "com.limbo.curvemotion",
   "displayName": "Curve Motion Editor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "unity": "2022.3",
   "description": "可视化曲线运动编辑器：在路径上编排位置、旋转、缩放、颜色、透明度等属性变化，导出给 AI 解析的 JSON 与 DOTween 代码。不依赖 DOTween。",
   "keywords": ["curve", "path", "motion", "tween", "dotween", "editor"],

@@ -10,3 +10,6 @@ Thumbs.db
 /[Bb]uild/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+tools/verify/bin/
+tools/verify/obj/
+!tools/verify/Verify.csproj

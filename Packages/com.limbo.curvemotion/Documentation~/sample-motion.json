@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "generator": "com.limbo.curvemotion",
+  "name": "CoinFlyToWallet",
+  "description": "金币从奖励弹窗弹起后沿弧线飞向右上角钱包，途中放大再缩小，抵达时淡出。",
+  "target": "RectTransform",
+  "conventions": {
+    "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
+    "positionUnit": "pixels (anchoredPosition)",
+    "rotationUnit": "degrees (local euler angles)",
+    "timeUnit": "seconds",
+    "pathTiming": "Each segment moves at constant speed along its arc length, shaped by the segment ease.",
+    "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
+    "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
+    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent]."
+  },
+  "duration": 0.74571,
+  "loop": {
+    "count": 1,
+    "type": "Restart"
+  },
+  "path": {
+    "points": [
+      {
+        "id": "start",
+        "type": "Auto",
+        "position": [0, 0, 0],
+        "inTangent": [13.33333, -26.66667, 0],
+        "outTangent": [-13.33333, 26.66667, 0],
+        "time": 0
+      },
+      {
+        "id": "apex",
+        "type": "Auto",
+        "position": [-80, 160, 0],
+        "inTangent": [-70, -106.66667, 0],
+        "outTangent": [70, 106.66667, 0],
+        "time": 0.25
+      },
+      {
+        "id": "wallet",
+        "type": "Auto",
+        "position": [420, 640, 0],
+        "inTangent": [-83.33334, -80, 0],
+        "outTangent": [83.33334, 80, 0],
+        "time": 0.74571
+      }
+    ],
+    "segments": [
+      {
+        "from": "start",
+        "to": "apex",
+        "timing": "Duration",
+        "duration": 0.25,
+        "speed": 1,
+        "length": 210.90271,
+        "ease": {
+          "type": "OutQuad"
+        },
+        "desc": "向左上弹起"
+      },
+      {
+        "from": "apex",
+        "to": "wallet",
+        "timing": "Speed",
+        "duration": 0.49571,
+        "speed": 1400,
+        "length": 693.99951,
+        "ease": {
+          "type": "InQuad"
+        },
+        "desc": "加速飞向钱包"
+      }
+    ]
+  },
+  "tracks": [
+    {
+      "type": "scale",
+      "name": "Scale",
+      "enabled": true,
+      "mode": "Multiply",
+      "components": ["x", "y", "z"],
+      "clips": [
+        {
+          "anchor": "start",
+          "offset": 0,
+          "start": 0,
+          "end": 0.25,
+          "duration": 0.25,
+          "ease": {
+            "type": "OutBack"
+          },
+          "value": [1.3, 1.3, 1],
+          "desc": "弹起时放大"
+        },
+        {
+          "anchor": "apex",
+          "offset": 0.05,
+          "start": 0.3,
+          "end": 0.6,
+          "duration": 0.3,
+          "ease": {
+            "type": "InQuad"
+          },
+          "value": [0.6, 0.6, 1],
+          "desc": "飞行中缩小"
+        }
+      ]
+    },
+    {
+      "type": "alpha",
+      "name": "Alpha",
+      "enabled": true,
+      "mode": "Absolute",
+      "components": ["a"],
+      "clips": [
+        {
+          "anchor": "wallet",
+          "offset": -0.08,
+          "start": 0.66571,
+          "end": 0.74571,
+          "duration": 0.08,
+          "ease": {
+            "type": "Linear"
+          },
+          "value": [0],
+          "desc": "抵达前淡出"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "anchor": "wallet",
+      "offset": 0,
+      "time": 0.74571,
+      "name": "OnCoinArrive",
+      "message": "coin arrived at wallet"
+    }
+  ]
+}
