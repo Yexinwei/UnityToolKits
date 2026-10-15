@@ -1,0 +1,21 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Check .meta files
+        run: |
+          python3 tools/gen-meta.py
+          git status --porcelain -- Packages | grep '\.meta$' && { echo "有文件缺少 .meta，请运行 python3 tools/gen-meta.py 并提交"; exit 1; } || true
+      - name: Run runtime tests (Unity stub)
+        run: dotnet test tools/verify
