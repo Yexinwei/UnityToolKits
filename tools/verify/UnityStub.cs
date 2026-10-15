@@ -7,6 +7,49 @@ namespace UnityEngine
     public class Object { }
     public class ScriptableObject : Object { }
 
+    public class Component : Object
+    {
+        public GameObject gameObject { get; internal set; }
+        public Transform transform => gameObject.transform;
+        public T GetComponent<T>() where T : Component => gameObject.GetComponent<T>();
+    }
+
+    public class Transform : Component
+    {
+        public Vector3 localPosition;
+        public Vector3 localScale = Vector3.one;
+        public Vector3 localEulerAngles;
+    }
+
+    public class CanvasGroup : Component { public float alpha = 1f; }
+
+    public class SpriteRenderer : Component { public Color color = Color.white; }
+
+    public class GameObject : Object
+    {
+        readonly System.Collections.Generic.List<Component> m_Components = new System.Collections.Generic.List<Component>();
+        public GameObject() { AddComponent<Transform>(); }
+        public Transform transform => (Transform)m_Components[0];
+        public T AddComponent<T>() where T : Component, new()
+        {
+            var c = new T { gameObject = this };
+            m_Components.Add(c);
+            return c;
+        }
+        public T GetComponent<T>() where T : Component
+        {
+            foreach (var c in m_Components) if (c is T t) return t;
+            return null;
+        }
+    }
+
+    public struct Color
+    {
+        public float r, g, b, a;
+        public Color(float r, float g, float b, float a) { this.r = r; this.g = g; this.b = b; this.a = a; }
+        public static Color white => new Color(1, 1, 1, 1);
+    }
+
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class CreateAssetMenuAttribute : Attribute
     {
