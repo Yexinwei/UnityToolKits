@@ -4,7 +4,8 @@ using UnityEngine;
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// Scene 视图里的路径绘制与编辑：曲线、点、切线手柄、Shift+点击插入、Delete 删除、播放头。
+    /// Scene 视图里的路径绘制与编辑：曲线、点、切线手柄、Shift+点击插入、Delete 删除、播放头，
+    /// 以及事件点位置和选中片段对应的路径区间。
     /// 所有坐标都在路径空间（<see cref="CurveMotionWindow.PathMatrix"/>），由 Handles.matrix 转到世界。
     /// </summary>
     internal static class PathSceneEditor
@@ -19,6 +20,8 @@ namespace Limbo.CurveMotion.Editor
         static readonly Color TangentColor = new Color(1f, 1f, 1f, 0.5f);
         static readonly Color InsertColor = new Color(1f, 0.5f, 0.2f, 1f);
         static readonly Color PlayheadColor = new Color(1f, 0.3f, 0.3f, 1f);
+        static readonly Color EventColor = new Color(1f, 0.75f, 0.3f, 1f);
+        const int SpanSamples = 32;
 
         public static void Draw(CurveMotionWindow window)
         {
@@ -31,6 +34,8 @@ namespace Limbo.CurveMotion.Editor
             Handles.matrix = window.PathMatrix;
 
             DrawPath(eval);
+            DrawClipSpan(window, eval, data);
+            DrawEvents(window, eval, data);
             if (window.EditPath)
             {
                 HandleDelete(window);
@@ -82,6 +87,7 @@ namespace Limbo.CurveMotion.Editor
             if (EditorGUI.EndChangeCheck())
             {
                 window.RecordUndo("Move Path Point");
+                pos = window.SnapPathPosition(pos);
                 if (window.IsUiTarget) pos.z = data.points[0].position.z;
                 point.position = pos;
                 window.MarkChanged();
@@ -136,8 +142,41 @@ namespace Limbo.CurveMotion.Editor
 
         static Vector3 Flatten(CurveMotionWindow window, Vector3 v)
         {
+            v = window.SnapPathVector(v);
             if (window.IsUiTarget) v.z = 0f;
             return v;
+        }
+
+        /// <summary>选中片段时，把它生效的时间段对应的那截路径加粗高亮，便于看出变化发生在哪里。</summary>
+        static void DrawClipSpan(CurveMotionWindow window, MotionEvaluator eval, MotionData data)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            if (!window.TryGetSelectedClipSpan(out float start, out float end, out var color)) return;
+            start = Mathf.Min(start, eval.PathDuration);
+            end = Mathf.Min(end, eval.PathDuration);
+            if (end - start <= 1e-4f) return;
+
+            var origin = data.points[0].position;
+            var samples = new Vector3[SpanSamples + 1];
+            for (int i = 0; i <= SpanSamples; i++)
+                samples[i] = origin + eval.EvaluatePosition(Mathf.Lerp(start, end, i / (float)SpanSamples));
+            Handles.color = new Color(color.r, color.g, color.b, 0.85f);
+            Handles.DrawAAPolyLine(9f, samples);
+        }
+
+        /// <summary>事件在路径上的触发位置。</summary>
+        static void DrawEvents(CurveMotionWindow window, MotionEvaluator eval, MotionData data)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            var origin = data.points[0].position;
+            for (int i = 0; i < data.events.Count; i++)
+            {
+                var pos = origin + eval.EvaluatePosition(eval.GetEventTime(i));
+                float size = HandleUtility.GetHandleSize(pos) * 0.05f;
+                Handles.color = i == window.SelectedEvent ? SelectedColor : EventColor;
+                Handles.DotHandleCap(0, pos, Quaternion.identity, size, EventType.Repaint);
+                Handles.Label(pos + Vector3.down * size * 3f, data.events[i].name, EditorStyles.miniLabel);
+            }
         }
 
         /// <summary>按住 Shift：在离鼠标最近的路径位置显示插入点，点击插入。</summary>

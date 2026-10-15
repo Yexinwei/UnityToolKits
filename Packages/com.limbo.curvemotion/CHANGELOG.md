@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2026-10-15
+- 时间轴：标尺与播放头（点击/拖动定位）、路径段条（拖分界改段时长，速度模式反算速度）、事件行、每条属性轨道一行。
+- 属性轨道：添加、启用/停用、改名、排序、删除；片段双击添加、拖动移动、拖两端改时长，被覆盖部分半透明显示；移动后自动重新锚定到它前面最近的路径点。
+- 检查器：片段（锚点、偏移、时长、缓动、目标值、描述）、事件、轨道、动效设置（名称、描述、播放次数、Restart/Yoyo）。
+- 吸附：时间轴吸附到路径点、事件、片段边界和播放头（Ctrl/⌘ 临时关闭）；Scene 视图路径点与切线可按网格吸附。
+- 快捷键：空格播放、Delete 删除、Ctrl/⌘+D 复制一份、Ctrl/⌘+C/V 复制粘贴片段和事件。
+- Scene 视图显示事件触发位置，选中片段时高亮它对应的那段路径。
+- MotionEditing 新增 AnchorAt、SetClipStart、SetEventTime、SetSegmentDuration、InsertPointAtTime 等；新增 TimeSnapping；MotionEvaluator 新增 TryGetClipRange。
+
 ## [0.3.0] - 2026-10-15
 - 编辑器窗口：选择/新建 Motion Asset，指定场景里的预览目标，路径点列表与选中点、路径段的详细参数编辑。
 - Scene 视图路径编辑：点击选点、拖动移动，Smooth/Free 点的切线手柄，Shift+点击路径插入点，Delete 删除点，全部支持 Undo。
