@@ -458,6 +458,9 @@ namespace Limbo.CurveMotion.Editor
 
         void OnUndoRedo()
         {
+            // 撤销“设置落点对象”时窗口状态也会回退，预览要与之对齐。
+            if (m_Preview && (!m_PreviewState.IsActive || m_PreviewState.Target != m_Target)) StopPreview();
+            SaveBindings();
             m_Eval = null;
             ClampSelection();
             if (m_Preview && m_Asset != null) m_PreviewState.CaptureTracks(m_Asset.data);
@@ -560,6 +563,8 @@ namespace Limbo.CurveMotion.Editor
                 ShowNotification(new GUIContent("落点对象不能是预览目标本身或它的子节点"));
                 return;
             }
+            // 窗口也记进 Undo，撤销时落点对象和绑定一起回去。
+            if (m_Asset != null) Undo.RecordObjects(new UnityEngine.Object[] { m_Asset, this }, "Set End Target");
             m_EndTarget = end;
             if (end != null && m_Asset != null)
             {
@@ -567,7 +572,6 @@ namespace Limbo.CurveMotion.Editor
                 var kind = MixedSpace.IsUi(end) ? TargetKind.RectTransform : TargetKind.Transform;
                 if (!binding.bound || binding.kind != kind || string.IsNullOrEmpty(binding.hint))
                 {
-                    RecordUndo("Bind End Target");
                     binding.bound = true;
                     binding.kind = kind;
                     if (string.IsNullOrEmpty(binding.hint)) binding.hint = end.name;
