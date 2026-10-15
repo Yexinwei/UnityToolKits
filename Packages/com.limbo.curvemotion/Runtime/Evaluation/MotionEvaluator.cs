@@ -58,6 +58,27 @@ namespace Limbo.CurveMotion
         public float GetClipStart(int track, int clip) => FindResolved(track, clip).start;
         public float GetClipEnd(int track, int clip) => FindResolved(track, clip).end;
 
+        /// <summary>
+        /// 片段的开始时间与实际结束时间（被覆盖时截断）。索引越界或数据改动后尚未 Rebuild 时返回 false，
+        /// 供编辑器在绘制时容错。
+        /// </summary>
+        public bool TryGetClipRange(int track, int clip, out float start, out float end)
+        {
+            start = end = 0f;
+            if (track < 0 || track >= m_Data.tracks.Count || track >= m_Tracks.Length) return false;
+            var clips = m_Data.tracks[track]?.clips;
+            if (clips == null || clip < 0 || clip >= clips.Count) return false;
+            var target = clips[clip];
+            foreach (var rc in m_Tracks[track])
+            {
+                if (!ReferenceEquals(rc.clip, target)) continue;
+                start = rc.start;
+                end = rc.end;
+                return true;
+            }
+            return false;
+        }
+
         public void GetSegmentControls(int segment, out Vector3 p0, out Vector3 p1, out Vector3 p2, out Vector3 p3)
         {
             int i = segment * 4;
