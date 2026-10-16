@@ -4,7 +4,7 @@
 - UI 与 3D 混合预览：窗口新增“落点对象”，路径终点自动对准它，可以是 UI 也可以是 3D 物体（3D 物体飞到 UI 上、UI 图片飞到 3D 模型上）。UI 与 3D 之间经屏幕坐标换算，3D 对象保持起点离相机的距离；跨 UI/3D 时可指定换算用的相机，默认 Main Camera。
 - 终点跟随：落点对象或预览目标移动、Game 视图尺寸变化时，终点实时对准；跟随时终点不能手动拖，Scene 视图在终点画出落点标记。
 - 预览时实时刷新 Game 视图，工具栏新增“Game 视图”按钮。
-- 预览目标、落点对象和相机按资产记在本机，重新打开资产时自动填回。
+- 资产记住上次编辑的地方：上次在哪个场景或预制体里编辑，以及预览目标、落点对象和相机（MotionAsset.editContext，按场景/预制体 GUID + 层级路径 + GlobalObjectId 记录，不进 JSON）。打开或拖入资产时自动回到那个场景/预制体模式并填回对象（有未保存修改先问，可在窗口“上次编辑”一行关掉“自动”）；对象找不到时在提示与警告里说明。
 - 数据：MotionData 新增 endTarget（bound、kind、hint），JSON 输出 endTarget 与 authoredEnd，并说明运行时的终点修正方法；MotionEvaluator 新增 GetPathProgress、EvaluatePosition(time, endCorrection)、AuthoredEndOffset；MotionEditing 新增 SetEndOffset。
 - 测试场景新增两个混合示例：demo-heart-to-wallet（3D 爱心飞进 UI 钱包）、demo-coin-to-heart（UI 金币落到 3D 爱心上），双击即可预览。
 - 循环新增“尾段自循环”：前面只播一次，之后只循环最后一段路径（例如飞到位后原地浮动）；时间轴标出循环的那一截。数据：LoopSettings.scope（Whole / LastSegment），MotionEvaluator.LoopStart / LoopLength，JSON 的 loop.scope 与 loop.start。

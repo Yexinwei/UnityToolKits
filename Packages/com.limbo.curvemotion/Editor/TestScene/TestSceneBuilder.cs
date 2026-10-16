@@ -12,7 +12,7 @@ namespace Limbo.CurveMotion.Editor
     /// <summary>
     /// 测试专用场景：天空背景、3D 地台上的爱心、左上角的宝石与钱包资源栏、底部奖励卡上的 UI 金币，
     /// 配四个示例 Motion Asset，并在编辑器窗口中打开。竖屏（9:16 ~ 1:2）下所有对象都完整可见。
-    /// 其中两个是 UI/3D 混合示例（爱心飞进钱包、金币落到爱心上），预览目标和落点对象已经记好，双击资产即可预览。
+    /// 其中两个是 UI/3D 混合示例（爱心飞进钱包、金币落到爱心上）。每个示例资产都记好了场景、预览目标和落点对象，双击资产即可预览。
     /// 场景与示例资产生成到工程的 Assets/CurveMotionTest/（git 包是只读的，包内的场景无法保存修改）。
     /// 示例动效来自包内同目录的 JSON，美术素材在 Art/；素材缺失时退回纯色方块，不影响测试。
     /// </summary>
@@ -115,20 +115,23 @@ namespace Limbo.CurveMotion.Editor
             var coin = FindTransform(CoinName);
             var heart = FindTransform(HeartName);
             var wallet = FindTransform(WalletName);
-            RegisterBinding(CoinDemo, coin, wallet, overwrite);
-            RegisterBinding(HopDemo, heart, null, overwrite);
-            RegisterBinding(HeartToWalletDemo, heart, wallet, overwrite);
-            RegisterBinding(CoinToHeartDemo, coin, heart, overwrite);
+            bool changed = RegisterBinding(CoinDemo, coin, wallet, overwrite);
+            changed |= RegisterBinding(HopDemo, heart, null, overwrite);
+            changed |= RegisterBinding(HeartToWalletDemo, heart, wallet, overwrite);
+            changed |= RegisterBinding(CoinToHeartDemo, coin, heart, overwrite);
+            if (changed) AssetDatabase.SaveAssets();
         }
 
-        static void RegisterBinding(string demo, Transform mover, Transform end, bool overwrite)
+        /// <summary>记进资产的“上次编辑”（场景 + 预览目标 + 落点对象）。</summary>
+        static bool RegisterBinding(string demo, Transform mover, Transform end, bool overwrite)
         {
             var asset = AssetDatabase.LoadAssetAtPath<MotionAsset>($"{Folder}/{demo}.asset");
-            if (asset == null || mover == null) return;
-            if (!overwrite && PreviewBindings.TryLoad(asset, out var savedMover, out var savedEnd, out _)
-                && savedMover != null && (end == null || savedEnd != null))
-                return;
-            PreviewBindings.Save(asset, mover, end, null);
+            if (asset == null || mover == null) return false;
+            var ctx = asset.editContext;
+            if (!overwrite && ctx != null && EditContextStore.Resolve(ctx.mover) != null
+                && (end == null || EditContextStore.Resolve(ctx.endTarget) != null))
+                return false;
+            return EditContextStore.Save(asset, mover, end, null);
         }
 
         static Transform FindTransform(string name)
