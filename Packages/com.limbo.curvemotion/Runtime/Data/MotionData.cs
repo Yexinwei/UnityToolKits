@@ -41,6 +41,15 @@ namespace Limbo.CurveMotion
         Yoyo,
     }
 
+    /// <summary>循环的范围。</summary>
+    public enum MotionLoopScope
+    {
+        /// <summary>整段动效从头循环。</summary>
+        Whole,
+        /// <summary>前面只播一次，之后只循环最后一段路径（从最后一段开始到结尾），例如飞到位后原地上下浮动。</summary>
+        LastSegment,
+    }
+
     /// <summary>
     /// 一段曲线运动的完整数据：路径 + 属性轨道 + 事件点 + 循环。
     /// 所有位置都是相对起点的偏移，同一份数据可以套用到任意对象。
@@ -60,6 +69,9 @@ namespace Limbo.CurveMotion
         public List<MotionEvent> events = new List<MotionEvent>();
 
         public LoopSettings loop = new LoopSettings();
+
+        /// <summary>终点绑定：终点在运行时对准另一个对象，可以跨 UI 与 3D（例如 3D 物体飞到 UI 图标上）。</summary>
+        public EndTarget endTarget = new EndTarget();
 
         public static string NewId() => Guid.NewGuid().ToString("N").Substring(0, 8);
 
@@ -117,11 +129,29 @@ namespace Limbo.CurveMotion
         public string message;
     }
 
+    /// <summary>
+    /// 终点绑定。bound 为 true 时，最后一个路径点只是设计时的参考位置：运行时换成落点对象的实际位置，
+    /// 起点不动，整条路径按走过的弧长比例逐渐修正过去（见 <see cref="MotionEvaluator.EvaluatePosition(float, Vector3)"/>）。
+    /// 落点对象是场景里的东西，不存进数据，由编辑器预览或运行时代码传入。
+    /// </summary>
+    [Serializable]
+    public class EndTarget
+    {
+        public bool bound;
+
+        /// <summary>落点对象的类型。与 <see cref="MotionData.target"/> 不同时，需要经过屏幕坐标换算。</summary>
+        public TargetKind kind = TargetKind.RectTransform;
+
+        /// <summary>写给人和 AI 看的落点说明，例如“顶部金币栏图标”。</summary>
+        public string hint;
+    }
+
     [Serializable]
     public class LoopSettings
     {
-        /// <summary>播放次数。1 = 不循环，-1 = 无限循环。</summary>
+        /// <summary>播放次数（尾段循环时是尾段的播放次数）。1 = 不循环，-1 = 无限循环。</summary>
         public int count = 1;
         public MotionLoopType type = MotionLoopType.Restart;
+        public MotionLoopScope scope = MotionLoopScope.Whole;
     }
 }

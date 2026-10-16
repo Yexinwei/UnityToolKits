@@ -5,7 +5,7 @@ namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
     /// Scene 视图里的路径绘制与编辑：曲线、点、切线手柄、Shift+点击插入、Delete 删除、播放头，
-    /// 以及事件点位置和选中片段对应的路径区间。
+    /// 以及事件点位置、选中片段对应的路径区间和终点绑定的落点标记。
     /// 所有坐标都在路径空间（<see cref="CurveMotionWindow.PathMatrix"/>），由 Handles.matrix 转到世界。
     /// </summary>
     internal static class PathSceneEditor
@@ -21,6 +21,8 @@ namespace Limbo.CurveMotion.Editor
         static readonly Color InsertColor = new Color(1f, 0.5f, 0.2f, 1f);
         static readonly Color PlayheadColor = new Color(1f, 0.3f, 0.3f, 1f);
         static readonly Color EventColor = new Color(1f, 0.75f, 0.3f, 1f);
+        static readonly Color EndTargetColor = new Color(1f, 0.35f, 0.75f, 1f);
+        static readonly Color EndTargetIdleColor = new Color(1f, 0.35f, 0.75f, 0.45f);
         const int SpanSamples = 32;
 
         public static void Draw(CurveMotionWindow window)
@@ -36,6 +38,7 @@ namespace Limbo.CurveMotion.Editor
             DrawPath(eval);
             DrawClipSpan(window, eval, data);
             DrawEvents(window, eval, data);
+            DrawEndTarget(window, data);
             if (window.EditPath)
             {
                 HandleDelete(window);
@@ -80,6 +83,7 @@ namespace Limbo.CurveMotion.Editor
         {
             int index = window.Selected;
             if (index <= 0 || index >= data.points.Count) return;
+            if (window.IsEndLocked && index == data.points.Count - 1) return; // 终点跟随落点对象，不能拖
             var point = data.points[index];
 
             EditorGUI.BeginChangeCheck();
@@ -177,6 +181,36 @@ namespace Limbo.CurveMotion.Editor
                 Handles.DotHandleCap(0, pos, Quaternion.identity, size, EventType.Repaint);
                 Handles.Label(pos + Vector3.down * size * 3f, data.events[i].name, EditorStyles.miniLabel);
             }
+        }
+
+        /// <summary>
+        /// 终点绑定时在终点画一个靶心并标出落点对象。UI 与 3D 混合时两者在 Scene 视图里不在一处（一个在 Canvas 里、一个在世界里），
+        /// 标签会注明按屏幕位置对准，实际效果在 Game 视图里看。
+        /// </summary>
+        static void DrawEndTarget(CurveMotionWindow window, MotionData data)
+        {
+            if (Event.current.type != EventType.Repaint || data.points.Count < 2) return;
+            var binding = data.endTarget;
+            if (binding == null || !binding.bound) return;
+
+            // 在世界空间画，靶心正对 Scene 相机。
+            var world = Handles.matrix.MultiplyPoint3x4(data.points[data.points.Count - 1].position);
+            var previous = Handles.matrix;
+            Handles.matrix = Matrix4x4.identity;
+            var camera = Camera.current;
+            var rotation = camera != null ? camera.transform.rotation : Quaternion.identity;
+            float size = HandleUtility.GetHandleSize(world) * 0.16f;
+
+            var end = window.EndObject;
+            Handles.color = window.IsEndLocked ? EndTargetColor : EndTargetIdleColor;
+            Handles.CircleHandleCap(0, world, rotation, size, EventType.Repaint);
+            Handles.CircleHandleCap(0, world, rotation, size * 0.55f, EventType.Repaint);
+
+            string label = end != null
+                ? $"落点：{end.name}" + (window.IsCrossSpace ? "（按屏幕位置对准，Game 视图看效果）" : "")
+                : $"落点：{(string.IsNullOrEmpty(binding.hint) ? "未指定" : binding.hint)}（运行时传入）";
+            Handles.Label(world + rotation * Vector3.down * size * 1.6f, label, EditorStyles.miniBoldLabel);
+            Handles.matrix = previous;
         }
 
         /// <summary>按住 Shift：在离鼠标最近的路径位置显示插入点，点击插入。</summary>
