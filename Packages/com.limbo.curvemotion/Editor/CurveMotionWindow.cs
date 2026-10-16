@@ -44,6 +44,7 @@ namespace Limbo.CurveMotion.Editor
         bool m_Playing;
         bool m_EndSyncFailed;
         bool m_RestoringContext;
+        MotionAsset m_PendingContext; // 请求了回到上次的场景/预制体但还没打开（例如预制体模式下一帧才就绪）
         double m_LastTick;
         MotionEvaluator m_Eval;
         readonly MotionPreview m_PreviewState = new MotionPreview();
@@ -537,6 +538,7 @@ namespace Limbo.CurveMotion.Editor
         {
             if (asset != m_Asset)
             {
+                m_PendingContext = null;
                 StopPreview();
                 m_Asset = asset;
                 m_Eval = null;
@@ -591,11 +593,26 @@ namespace Limbo.CurveMotion.Editor
             }
         }
 
-        // 记录里的对象被删后又撤销回来、或换了场景后出现时，自动补回窗口。
+        void FinishOpenContext(MotionEditContext ctx)
+        {
+            m_PendingContext = null;
+            ApplyContext(ctx);
+            SyncEndToTarget();
+            if (m_Target != null) Selection.activeTransform = m_Target;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        // 记录里的对象被删后又撤销回来、或换了场景后出现时，自动补回窗口；请求过回到上次的地方、那里刚打开时，整套填回。
         void OnHierarchyChanged()
         {
             var ctx = EditContext;
             if (ctx == null || !EditContextStore.IsOpen(ctx.Main)) return;
+            if (m_PendingContext != null && m_PendingContext == m_Asset)
+            {
+                FinishOpenContext(ctx);
+                return;
+            }
             bool missing = (m_Target == null && !ctx.mover.IsEmpty) || (m_EndTarget == null && !ctx.endTarget.IsEmpty)
                 || (m_WorldCamera == null && !ctx.camera.IsEmpty);
             if (!missing) return;
@@ -613,12 +630,9 @@ namespace Limbo.CurveMotion.Editor
             var ctx = EditContext;
             if (ctx == null) return;
             StopPreview();
-            if (EditContextStore.Open(ctx.Main))
-            {
-                ApplyContext(ctx);
-                SyncEndToTarget();
-                if (m_Target != null) Selection.activeTransform = m_Target;
-            }
+            m_PendingContext = null;
+            if (EditContextStore.Open(ctx.Main)) FinishOpenContext(ctx);
+            else m_PendingContext = m_Asset;
             Repaint();
             SceneView.RepaintAll();
         }
@@ -691,6 +705,7 @@ namespace Limbo.CurveMotion.Editor
         void SaveContext(EditContextStore.Slots slots)
         {
             if (m_Asset == null || m_RestoringContext) return;
+            m_PendingContext = null; // 用户已经在别处指定了对象，之后打开那个场景也不再覆盖
             EditContextStore.Save(m_Asset, slots, m_Target, m_EndTarget, m_WorldCamera);
         }
 
