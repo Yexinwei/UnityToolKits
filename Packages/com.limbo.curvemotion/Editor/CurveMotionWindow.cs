@@ -43,6 +43,7 @@ namespace Limbo.CurveMotion.Editor
 
         bool m_Playing;
         bool m_EndSyncFailed;
+        bool m_RestoringContext;
         double m_LastTick;
         MotionEvaluator m_Eval;
         readonly MotionPreview m_PreviewState = new MotionPreview();
@@ -436,6 +437,7 @@ namespace Limbo.CurveMotion.Editor
             EditorApplication.update += OnEditorUpdate;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             AssemblyReloadEvents.beforeAssemblyReload += StopPreview;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EditorSceneManager.sceneSaving += OnSceneSaving;
             PrefabStage.prefabSaving += OnPrefabSaving;
             PrefabStage.prefabStageClosing += OnPrefabStageClosing;
@@ -452,6 +454,7 @@ namespace Limbo.CurveMotion.Editor
             EditorApplication.update -= OnEditorUpdate;
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             AssemblyReloadEvents.beforeAssemblyReload -= StopPreview;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
             EditorSceneManager.sceneSaving -= OnSceneSaving;
             PrefabStage.prefabSaving -= OnPrefabSaving;
             PrefabStage.prefabStageClosing -= OnPrefabStageClosing;
@@ -467,7 +470,6 @@ namespace Limbo.CurveMotion.Editor
         {
             // 撤销“设置落点对象”时窗口状态也会回退，预览要与之对齐。
             if (m_Preview && (!m_PreviewState.IsActive || m_PreviewState.Target != m_Target)) StopPreview();
-            SaveContext(explicitChange: false);
             m_Eval = null;
             ClampSelection();
             if (m_Preview && m_Asset != null) m_PreviewState.CaptureTracks(m_Asset.data);
@@ -570,14 +572,39 @@ namespace Limbo.CurveMotion.Editor
             };
         }
 
-        void ApplyContext(MotionEditContext ctx)
+        /// <summary>填回记录里能找到的对象。onlyMissing：只补窗口里空着的（撤销删除、对象重新出现时）。填回不算修改，不写资产。</summary>
+        void ApplyContext(MotionEditContext ctx, bool onlyMissing = false)
         {
-            var mover = EditContextStore.Resolve(ctx.mover);
-            var end = EditContextStore.Resolve(ctx.endTarget);
-            var cameraTransform = EditContextStore.Resolve(ctx.camera);
-            if (end != null) m_EndTarget = end;
-            if (cameraTransform != null) m_WorldCamera = cameraTransform.GetComponent<Camera>();
-            if (mover != null) SetTarget(mover);
+            var mover = onlyMissing && m_Target != null ? null : EditContextStore.Resolve(ctx.mover);
+            var end = onlyMissing && m_EndTarget != null ? null : EditContextStore.Resolve(ctx.endTarget);
+            var cameraTransform = onlyMissing && m_WorldCamera != null ? null : EditContextStore.Resolve(ctx.camera);
+            m_RestoringContext = true;
+            try
+            {
+                if (end != null) m_EndTarget = end;
+                if (cameraTransform != null) m_WorldCamera = cameraTransform.GetComponent<Camera>();
+                if (mover != null) SetTarget(mover);
+            }
+            finally
+            {
+                m_RestoringContext = false;
+            }
+        }
+
+        // 记录里的对象被删后又撤销回来、或换了场景后出现时，自动补回窗口。
+        void OnHierarchyChanged()
+        {
+            var ctx = EditContext;
+            if (ctx == null || !EditContextStore.IsOpen(ctx.Main)) return;
+            bool missing = (m_Target == null && !ctx.mover.IsEmpty) || (m_EndTarget == null && !ctx.endTarget.IsEmpty)
+                || (m_WorldCamera == null && !ctx.camera.IsEmpty);
+            if (!missing) return;
+            var before = (m_Target, m_EndTarget, m_WorldCamera);
+            ApplyContext(ctx, onlyMissing: true);
+            if (before == (m_Target, m_EndTarget, m_WorldCamera)) return;
+            SyncEndToTarget();
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         /// <summary>回到上次编辑的场景/预制体，并填回预览目标、落点对象和相机。</summary>
@@ -602,6 +629,8 @@ namespace Limbo.CurveMotion.Editor
             bool wasPreviewing = m_Preview;
             StopPreview();
             m_Target = target;
+            // 先记录再记 Undo：撤销类型变化时不把“上次编辑”也退回去（窗口里的预览目标不撤销）。
+            SaveMover();
             if (m_Target != null && m_Asset != null)
             {
                 var kind = m_Target is RectTransform ? TargetKind.RectTransform : TargetKind.Transform;
@@ -612,7 +641,6 @@ namespace Limbo.CurveMotion.Editor
                     MarkChanged();
                 }
             }
-            SaveContext();
             SyncEndToTarget();
             if (wasPreviewing) StartPreview();
             SceneView.RepaintAll();
@@ -645,7 +673,7 @@ namespace Limbo.CurveMotion.Editor
                     MarkChanged();
                 }
             }
-            SaveContext();
+            SaveContext(EditContextStore.Slots.End);
             SyncEndToTarget();
             Repaint();
             SceneView.RepaintAll();
@@ -655,20 +683,27 @@ namespace Limbo.CurveMotion.Editor
         {
             if (camera == m_WorldCamera) return;
             m_WorldCamera = camera;
-            SaveContext();
+            SaveContext(EditContextStore.Slots.Camera);
             SyncEndToTarget();
         }
 
-        /// <summary>
-        /// 把当前的预览目标、落点对象、相机和它们所在的场景/预制体记进资产（有变化才写）。
-        /// 不是用户主动改的（如撤销后同步）时，上次的场景没打开就不写，免得用别处的对象覆盖记录。
-        /// </summary>
-        void SaveContext(bool explicitChange = true)
+        /// <summary>把用户刚改的那一项（连同所在的场景/预制体）记进资产，有变化才写。填回记录时不写。</summary>
+        void SaveContext(EditContextStore.Slots slots)
         {
-            if (m_Asset == null) return;
-            var ctx = EditContext;
-            if (!explicitChange && ctx != null && !EditContextStore.IsOpen(ctx.Main)) return;
-            EditContextStore.Save(m_Asset, m_Target, m_EndTarget, m_WorldCamera);
+            if (m_Asset == null || m_RestoringContext) return;
+            EditContextStore.Save(m_Asset, slots, m_Target, m_EndTarget, m_WorldCamera);
+        }
+
+        /// <summary>记预览目标。换到了别的场景/预制体时，落点对象和相机的旧记录属于原来的地方，按窗口当前的值一起更新。</summary>
+        void SaveMover()
+        {
+            if (m_Asset == null || m_RestoringContext) return;
+            var slots = EditContextStore.Slots.Mover;
+            var main = EditContext?.Main;
+            var fresh = EditContextStore.Capture(m_Target);
+            if (main != null && !fresh.IsEmpty && (fresh.container != main.container || fresh.prefab != main.prefab))
+                slots = EditContextStore.Slots.All;
+            SaveContext(slots);
         }
 
         /// <summary>
@@ -705,7 +740,7 @@ namespace Limbo.CurveMotion.Editor
             if (m_Target == null || m_Asset == null) return;
             m_PreviewState.Begin(m_Target, m_Asset.data);
             m_Preview = true;
-            SaveContext();
+            SaveMover();
             ApplyPreview();
         }
 
@@ -1545,7 +1580,7 @@ namespace Limbo.CurveMotion.Editor
             AssetDatabase.CreateAsset(asset, path);
             AssetDatabase.SaveAssets();
             SetAsset(asset);
-            SaveContext();
+            SaveMover();
             EditorGUIUtility.PingObject(asset);
         }
 

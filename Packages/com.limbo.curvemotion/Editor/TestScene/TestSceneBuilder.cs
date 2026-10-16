@@ -131,7 +131,7 @@ namespace Limbo.CurveMotion.Editor
             if (!overwrite && ctx != null && EditContextStore.Resolve(ctx.mover) != null
                 && (end == null || EditContextStore.Resolve(ctx.endTarget) != null))
                 return false;
-            return EditContextStore.Save(asset, mover, end, null);
+            return EditContextStore.Save(asset, EditContextStore.Slots.All, mover, end, null);
         }
 
         static Transform FindTransform(string name)

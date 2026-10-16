@@ -25,17 +25,24 @@ namespace Limbo.CurveMotion.Editor
             set => EditorPrefs.SetBool(AutoOpenKey, value);
         }
 
-        /// <summary>记下三个对象；有变化才写进资产并标脏。未保存场景里的对象和工程里的资产没法记，记为空。</summary>
-        public static bool Save(MotionAsset asset, Transform mover, Transform end, Camera camera)
+        [System.Flags]
+        public enum Slots { Mover = 1, End = 2, Camera = 4, All = Mover | End | Camera }
+
+        /// <summary>
+        /// 记下 slots 指定的对象；有变化才写进资产并标脏。未保存场景里的对象和工程里的资产没法记，记为空。
+        /// 只写用户改了的那一项：对象被删时别的项不会被顺手清掉，撤销删除后还能找回。
+        /// </summary>
+        public static bool Save(MotionAsset asset, Slots slots, Transform mover, Transform end, Camera camera)
         {
             if (asset == null) return false;
             var ctx = asset.editContext ?? (asset.editContext = new MotionEditContext());
             if (ctx.mover == null) ctx.mover = new MotionObjectRef();
             if (ctx.endTarget == null) ctx.endTarget = new MotionObjectRef();
             if (ctx.camera == null) ctx.camera = new MotionObjectRef();
-            bool changed = Write(ctx.mover, mover);
-            changed |= Write(ctx.endTarget, end);
-            changed |= Write(ctx.camera, camera != null ? camera.transform : null);
+            bool changed = false;
+            if ((slots & Slots.Mover) != 0) changed |= Write(ctx.mover, mover);
+            if ((slots & Slots.End) != 0) changed |= Write(ctx.endTarget, end);
+            if ((slots & Slots.Camera) != 0) changed |= Write(ctx.camera, camera != null ? camera.transform : null);
             if (changed) EditorUtility.SetDirty(asset);
             return changed;
         }
