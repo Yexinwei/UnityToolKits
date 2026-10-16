@@ -7,6 +7,8 @@
   ic_star.png    星星
   ui_panel.png   奖励弹窗底板（九宫格）
   ui_bar.png     资源栏胶囊底（九宫格）
+  bg_sky.png     全屏背景（天空渐变 + 柔和云朵）
+  Ground_MatCap.png + Ground_Mat.mat  3D 地台的 MatCap 贴图与材质（用 Heart MatCap 着色器）
 每张图先按 4 倍尺寸绘制再缩小，边缘抗锯齿。需要 Pillow：python3 tools/art/gen_ui_art.py
 已有 .meta 的不会改动 GUID；新文件的 .meta 由本脚本写入（Sprite、九宫格边距）。
 """
@@ -241,13 +243,71 @@ def bar():
     save(c, "ui_bar.png", (160, 80))
 
 
+# ---------------------------------------------------------------- 背景与地台
+
+def sky():
+    W, H = 540, 960  # 拉伸铺满屏幕，不需要超采样
+    c = gradient((W, H), "#6FC3F7", "#D9F1FF")
+    for (cx, cy, rx, ry, a) in [(430, 150, 170, 60, 70), (330, 190, 120, 50, 60), (110, 420, 150, 50, 55),
+                                (200, 450, 110, 40, 45), (470, 640, 130, 45, 40)]:
+        m = shape(c.size, lambda d, b=(cx - rx, cy - ry, cx + rx, cy + ry): d.ellipse(b, fill=255)).filter(ImageFilter.GaussianBlur(18))
+        layer = Image.new("RGBA", c.size, (255, 255, 255, a))
+        c.alpha_composite(Image.composite(layer, Image.new("RGBA", c.size, (0, 0, 0, 0)), m))
+    c.convert("RGB").save(os.path.join(OUT, "bg_sky.png"), optimize=True)
+    print("写入 bg_sky.png", (W, H))
+
+
+def ground_matcap():
+    """地台 MatCap：法线朝上（贴图上方）最亮，正对相机（中心）中等，朝下最暗；左上一点高光。"""
+    N = 256
+    img = Image.new("RGB", (N, N))
+    px = img.load()
+    top, mid, low = hex_rgb("#C9F08F"), hex_rgb("#8ED45E"), hex_rgb("#4E9A3A")
+    for y in range(N):
+        v = 1 - y / (N - 1)  # 1 = 上
+        for x in range(N):
+            if v >= 0.5:
+                k = (v - 0.5) * 2
+                col = [mid[i] + (top[i] - mid[i]) * k for i in range(3)]
+            else:
+                k = v * 2
+                col = [low[i] + (mid[i] - low[i]) * k for i in range(3)]
+            dx, dy = (x - N * 0.38) / N, (y - N * 0.25) / N
+            hl = max(0.0, 1 - math.hypot(dx, dy) / 0.22) ** 2 * 0.35
+            px[x, y] = tuple(int(min(255, col[i] + (255 - col[i]) * hl)) for i in range(3))
+    img.save(os.path.join(OUT, "Ground_MatCap.png"), optimize=True)
+    print("写入 Ground_MatCap.png", (N, N))
+
+
+def guid_of(name):
+    for line in open(os.path.join(OUT, name + ".meta"), encoding="utf-8"):
+        if line.startswith("guid: "):
+            return line.split()[1]
+    raise RuntimeError("没有 guid: " + name)
+
+
+def write_ground_material():
+    path = os.path.join(OUT, "Ground_Mat.mat")
+    if os.path.exists(path):
+        return
+    text = open(os.path.join(OUT, "Heart3D_Mat.mat"), encoding="utf-8").read()
+    text = text.replace("m_Name: Heart3D_Mat", "m_Name: Ground_Mat")
+    text = text.replace(guid_of("Heart3D_MatCap.png"), guid_of("Ground_MatCap.png"))
+    with open(path, "w", newline="\n", encoding="utf-8") as f:
+        f.write(text)
+    with open(path + ".meta", "w", newline="\n", encoding="utf-8") as f:
+        f.write("fileFormatVersion: 2\nguid: %s\nNativeFormatImporter:\n  externalObjects: {}\n  mainObjectFileID: 2100000\n"
+                "  userData: \n  assetBundleName: \n  assetBundleVariant: \n" % uuid.uuid4().hex)
+    print("写入 Ground_Mat.mat")
+
+
 # ---------------------------------------------------------------- .meta
 
-def write_meta(name, border):
+def write_meta(name, border, template_name="ic_coin.png"):
     meta = os.path.join(OUT, name + ".meta")
     if os.path.exists(meta):
         return
-    template = open(os.path.join(OUT, "ic_coin.png.meta"), encoding="utf-8").read()
+    template = open(os.path.join(OUT, template_name + ".meta"), encoding="utf-8").read()
     lines = []
     for line in template.splitlines():
         if line.startswith("guid: "):
@@ -268,6 +328,10 @@ if __name__ == "__main__":
     star()
     panel()
     bar()
-    for name, border in [("ic_wallet.png", (0, 0, 0, 0)), ("ic_gem.png", (0, 0, 0, 0)), ("ic_star.png", (0, 0, 0, 0)),
+    sky()
+    ground_matcap()
+    write_meta("Ground_MatCap.png", (0, 0, 0, 0), template_name="Heart3D_MatCap.png")
+    write_ground_material()
+    for name, border in [("bg_sky.png", (0, 0, 0, 0)), ("ic_wallet.png", (0, 0, 0, 0)), ("ic_gem.png", (0, 0, 0, 0)), ("ic_star.png", (0, 0, 0, 0)),
                          ("ui_panel.png", (48, 52, 48, 48)), ("ui_bar.png", (40, 38, 40, 38))]:
         write_meta(name, border)

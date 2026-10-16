@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generator": "com.limbo.curvemotion",
   "name": "HeartToWallet",
-  "description": "3D 爱心弹起后飞进 UI 钱包：终点绑定钱包，跨 3D/UI 按屏幕位置对准；途中转一圈并缩小。",
+  "description": "3D 爱心从地台上弹起，飞进左上角的 UI 钱包：终点绑定钱包，跨 3D/UI 按屏幕位置对准；途中转一圈并缩小。",
   "target": "Transform",
   "conventions": {
     "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
@@ -13,18 +13,21 @@
     "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
     "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
     "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].",
+    "loop": "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start (the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. Yoyo plays every other repeat backwards.",
     "endTarget": "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. Then add (actualEnd - authoredEnd) * pathProgress to every evaluated position, where pathProgress is the travelled fraction of the total arc length (0 at the start, 1 at the end)."
   },
   "duration": 0.85,
   "loop": {
     "count": 1,
-    "type": "Restart"
+    "type": "Restart",
+    "scope": "Whole",
+    "start": 0
   },
   "endTarget": {
     "bound": true,
     "kind": "RectTransform",
-    "hint": "UI 钱包",
-    "authoredEnd": [3.52, 2.69, 0]
+    "hint": "左上角钱包",
+    "authoredEnd": [-0.47, 6.54, 0]
   },
   "path": {
     "points": [
@@ -32,24 +35,24 @@
         "id": "start",
         "type": "Auto",
         "position": [0, 0, 0],
-        "inTangent": [0.05, -0.16667, 0],
-        "outTangent": [-0.05, 0.16667, 0],
+        "inTangent": [-0.1, -0.23333, 0],
+        "outTangent": [0.1, 0.23333, 0],
         "time": 0
       },
       {
         "id": "lift",
         "type": "Auto",
-        "position": [-0.3, 1, 0],
-        "inTangent": [-0.58667, -0.44833, 0],
-        "outTangent": [0.58667, 0.44833, 0],
+        "position": [0.6, 1.4, 0],
+        "inTangent": [0.07833, -1.09, 0],
+        "outTangent": [-0.07833, 1.09, 0],
         "time": 0.3
       },
       {
         "id": "wallet",
         "type": "Auto",
-        "position": [3.52, 2.69, 0],
-        "inTangent": [-0.63667, -0.28167, 0],
-        "outTangent": [0.63667, 0.28167, 0],
+        "position": [-0.47, 6.54, 0],
+        "inTangent": [0.17833, -0.85667, 0],
+        "outTangent": [-0.17833, 0.85667, 0],
         "time": 0.85
       }
     ],
@@ -60,7 +63,7 @@
         "timing": "Duration",
         "duration": 0.3,
         "speed": 1,
-        "length": 1.2668,
+        "length": 1.60275,
         "ease": {
           "type": "OutQuad"
         },
@@ -72,11 +75,11 @@
         "timing": "Duration",
         "duration": 0.55,
         "speed": 1,
-        "length": 4.18268,
+        "length": 5.25308,
         "ease": {
           "type": "InQuad"
         },
-        "desc": "加速飞向 UI 钱包"
+        "desc": "加速飞向左上角钱包"
       }
     ]
   },

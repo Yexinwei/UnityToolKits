@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generator": "com.limbo.curvemotion",
   "name": "CoinToHeart",
-  "description": "UI 金币向右上弹起后落到 3D 爱心上：终点绑定爱心，跨 UI/3D 按屏幕位置对准；先放大再缩小，抵达前淡出。",
+  "description": "UI 金币从奖励卡向右上弹起，再沿弧线落到 3D 爱心上：终点绑定爱心，跨 UI/3D 按屏幕位置对准；先放大再缩小，抵达前淡出。",
   "target": "RectTransform",
   "conventions": {
     "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
@@ -13,18 +13,21 @@
     "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
     "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
     "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].",
+    "loop": "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start (the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. Yoyo plays every other repeat backwards.",
     "endTarget": "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. Then add (actualEnd - authoredEnd) * pathProgress to every evaluated position, where pathProgress is the travelled fraction of the total arc length (0 at the start, 1 at the end)."
   },
   "duration": 0.75,
   "loop": {
     "count": 1,
-    "type": "Restart"
+    "type": "Restart",
+    "scope": "Whole",
+    "start": 0
   },
   "endTarget": {
     "bound": true,
     "kind": "Transform",
     "hint": "3D 爱心",
-    "authoredEnd": [-166, 192, 0]
+    "authoredEnd": [-353, 528, 0]
   },
   "path": {
     "points": [
@@ -32,24 +35,24 @@
         "id": "start",
         "type": "Auto",
         "position": [0, 0, 0],
-        "inTangent": [-36.66667, -63.33334, 0],
-        "outTangent": [36.66667, 63.33334, 0],
+        "inTangent": [-33.33334, -55, 0],
+        "outTangent": [33.33334, 55, 0],
         "time": 0
       },
       {
         "id": "arc",
         "type": "Auto",
-        "position": [220, 380, 0],
-        "inTangent": [27.66667, -32, 0],
-        "outTangent": [-27.66667, 32, 0],
+        "position": [200, 330, 0],
+        "inTangent": [58.83334, -88, 0],
+        "outTangent": [-58.83334, 88, 0],
         "time": 0.3
       },
       {
         "id": "heart",
         "type": "Auto",
-        "position": [-166, 192, 0],
-        "inTangent": [64.33334, 31.33333, 0],
-        "outTangent": [-64.33334, -31.33333, 0],
+        "position": [-353, 528, 0],
+        "inTangent": [92.16667, -33, 0],
+        "outTangent": [-92.16667, 33, 0],
         "time": 0.75
       }
     ],
@@ -60,7 +63,7 @@
         "timing": "Duration",
         "duration": 0.3,
         "speed": 1,
-        "length": 443.89499,
+        "length": 404.07486,
         "ease": {
           "type": "OutQuad"
         },
@@ -72,11 +75,11 @@
         "timing": "Duration",
         "duration": 0.45,
         "speed": 1,
-        "length": 434.61984,
+        "length": 592.86145,
         "ease": {
           "type": "InQuad"
         },
-        "desc": "落向 3D 爱心"
+        "desc": "沿弧线落到 3D 爱心上"
       }
     ]
   },
