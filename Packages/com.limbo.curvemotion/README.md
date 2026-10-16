@@ -21,7 +21,7 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 
 菜单 `Tools/Curve Motion/Editor`，或在 Project 窗口双击 Motion Asset。
 
-想直接试用：菜单 `Tools/Curve Motion/Open Test Scene`，会在 `Assets/CurveMotionTest/` 生成测试场景（UI 金币、UI 钱包、3D 爱心）和四个示例动效，并自动打开编辑器。其中 `demo-heart-to-wallet`（3D 爱心飞进 UI 钱包）和 `demo-coin-to-heart`（UI 金币落到 3D 爱心上）是 UI/3D 混合示例，双击资产即可预览。`Rebuild Test Scene` 把它们恢复为默认内容。
+想直接试用：菜单 `Tools/Curve Motion/Open Test Scene`，会在 `Assets/CurveMotionTest/` 生成测试场景（奖励面板上的 UI 金币、宝石与钱包资源栏、3D 爱心）和四个示例动效，并自动打开编辑器。其中 `demo-heart-to-wallet`（3D 爱心飞进 UI 钱包）和 `demo-coin-to-heart`（UI 金币落到 3D 爱心上）是 UI/3D 混合示例，双击资产即可预览。`Rebuild Test Scene` 把它们恢复为默认内容。
 
 1. 点“新建”创建 Motion Asset（或拖入已有的）。
 2. 把场景里的对象拖到“预览目标”（或选中对象后点“用选中”）。路径从它的当前位置开始绘制。
@@ -32,7 +32,10 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
    - 事件行：双击空白处加事件，拖动改时间。
    - 属性轨道：“+ 添加属性轨道”选择缩放、旋转、透明度、颜色等；双击空白处加片段，拖动片段移动，拖两端改时长。同一轨道后面的片段会覆盖前面的，被覆盖的部分显示为半透明。
    - 拖动时吸附到路径点、事件、其他片段边界和播放头，按住 Ctrl/⌘ 临时关闭。右键有插入、复制、删除等操作。
-5. 时间轴下方显示选中项的参数：路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、日志内容、锚点、偏移），以及动效设置（名称、描述、播放次数与循环方式）。
+5. 时间轴下方分两块：
+   - **单段编辑**（黄色）：只改选中的那一项。路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、日志内容、锚点、偏移）。
+   - **全局编辑**（蓝色）：作用于整个动效。名称、描述、循环、终点绑定。循环范围可选“整段循环”或“尾段自循环”（前面只播一次，之后只循环最后一段路径，例如飞到位后原地浮动），时间轴上会标出循环的那一截。
+   - 窗口最下方是**提示与警告**，按错误 / 警告 / 提示分类列出。
 6. 快捷键（窗口有焦点时）：空格播放/暂停，Delete 删除选中项，Ctrl/⌘+D 复制一份，Ctrl/⌘+C / V 复制粘贴片段或事件（粘贴到播放头处）。
 7. 点“停止”、保存场景或进入 Play 模式时，对象自动还原。
 8. “复制 JSON”可直接粘贴给 AI；“导出/导入 JSON”读写文件。

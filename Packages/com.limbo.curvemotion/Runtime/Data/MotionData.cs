@@ -41,6 +41,15 @@ namespace Limbo.CurveMotion
         Yoyo,
     }
 
+    /// <summary>循环的范围。</summary>
+    public enum MotionLoopScope
+    {
+        /// <summary>整段动效从头循环。</summary>
+        Whole,
+        /// <summary>前面只播一次，之后只循环最后一段路径（从最后一段开始到结尾），例如飞到位后原地上下浮动。</summary>
+        LastSegment,
+    }
+
     /// <summary>
     /// 一段曲线运动的完整数据：路径 + 属性轨道 + 事件点 + 循环。
     /// 所有位置都是相对起点的偏移，同一份数据可以套用到任意对象。
@@ -140,8 +149,9 @@ namespace Limbo.CurveMotion
     [Serializable]
     public class LoopSettings
     {
-        /// <summary>播放次数。1 = 不循环，-1 = 无限循环。</summary>
+        /// <summary>播放次数（尾段循环时是尾段的播放次数）。1 = 不循环，-1 = 无限循环。</summary>
         public int count = 1;
         public MotionLoopType type = MotionLoopType.Restart;
+        public MotionLoopScope scope = MotionLoopScope.Whole;
     }
 }

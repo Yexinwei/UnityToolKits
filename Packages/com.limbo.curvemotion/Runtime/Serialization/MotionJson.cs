@@ -32,6 +32,9 @@ namespace Limbo.CurveMotion.Serialization
             w.Field("clipTiming", "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.");
             w.Field("clipValue", "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.");
             w.Field("ease", "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].");
+            w.Field("loop", "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start " +
+                "(the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. " +
+                "Yoyo plays every other repeat backwards.");
             w.Field("endTarget", "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, " +
                 "convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, " +
                 "a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. " +
@@ -42,6 +45,8 @@ namespace Limbo.CurveMotion.Serialization
             w.Name("loop").BeginObject()
                 .Field("count", data.loop.count)
                 .Field("type", data.loop.type.ToString())
+                .Field("scope", data.loop.scope.ToString())
+                .Field("start", eval.LoopStart)
                 .EndObject();
 
             var end = data.endTarget ?? new EndTarget();
@@ -194,6 +199,7 @@ namespace Limbo.CurveMotion.Serialization
             {
                 data.loop.count = GetInt(loop, "count", 1);
                 data.loop.type = GetEnum(loop, "type", MotionLoopType.Restart);
+                data.loop.scope = GetEnum(loop, "scope", MotionLoopScope.Whole);
             }
 
             if (GetObject(root, "endTarget") is Dictionary<string, object> end)

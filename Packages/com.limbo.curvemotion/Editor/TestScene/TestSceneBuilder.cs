@@ -31,7 +31,7 @@ namespace Limbo.CurveMotion.Editor
         const string WalletName = "Wallet";
 
         /// <summary>场景内容变化时加 1；旧版本生成的场景会提示重建。记录在场景 .meta 的 userData 里。</summary>
-        const string SceneVersion = "curvemotion-test-scene:2";
+        const string SceneVersion = "curvemotion-test-scene:3";
 
         [MenuItem("Tools/Curve Motion/Open Test Scene", priority = 20)]
         public static void OpenTestScene()
@@ -42,7 +42,7 @@ namespace Limbo.CurveMotion.Editor
                 return;
             }
             if (!IsCurrentVersion() && EditorUtility.DisplayDialog("测试场景已更新",
-                    "现有测试场景是旧版本包生成的（没有新的金币和爱心素材）。是否重建？已有的示例动效保留不动。", "重建", "先用旧的"))
+                    "现有测试场景是旧版本包生成的（没有新的钱包、宝石、奖励面板等素材）。是否重建？已有的示例动效保留不动。", "重建", "先用旧的"))
             {
                 Build(resetAssets: false);
                 return;
@@ -243,21 +243,33 @@ namespace Limbo.CurveMotion.Editor
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            // 钱包放在金币示例路径的终点（起点 + (420, 640)），方便目测路径是否对齐。
+            // 奖励弹窗：金币从这里弹起。放在左下，避开 3D 爱心在屏幕上的位置。
             var coinStart = new Vector2(-250f, -450f);
-            CreateImage(canvasGo.transform, WalletName, coinStart + new Vector2(420f, 640f), new Vector2(180f, 90f), new Color(0.55f, 0.35f, 0.2f, 1f));
+            var panel = CreateImage(canvasGo.transform, "Reward Panel", coinStart + new Vector2(0f, -30f), new Vector2(300f, 250f), LoadSprite("ui_panel.png"));
+            panel.type = Image.Type.Sliced;
+            CreateImage(canvasGo.transform, "Reward Star", coinStart + new Vector2(0f, 110f), new Vector2(90f, 90f), LoadSprite("ic_star.png"));
 
-            var coinSprite = AssetDatabase.LoadAssetAtPath<Sprite>($"{ArtFolder}/ic_coin.png");
-            if (coinSprite == null) Debug.LogWarning($"[Curve Motion] 找不到 {ArtFolder}/ic_coin.png，金币改用纯色块。");
-            var coin = CreateImage(canvasGo.transform, CoinName, coinStart, new Vector2(120f, 120f),
-                coinSprite != null ? Color.white : new Color(1f, 0.82f, 0.2f, 1f));
-            coin.sprite = coinSprite;
+            // 资源栏：宝石在上，钱包在下。钱包图标放在金币示例路径的终点（起点 + (420, 640)），方便目测路径是否对齐。
+            var walletPos = coinStart + new Vector2(420f, 640f);
+            CreateCounter(canvasGo.transform, "Gem", walletPos + new Vector2(0f, 120f), new Vector2(96f, 96f), LoadSprite("ic_gem.png"), "36");
+            CreateCounter(canvasGo.transform, WalletName, walletPos, new Vector2(150f, 128f), LoadSprite("ic_wallet.png"), "1,250");
+
+            var coinSprite = LoadSprite("ic_coin.png");
+            var coin = CreateImage(canvasGo.transform, CoinName, coinStart, new Vector2(120f, 120f), coinSprite);
+            if (coinSprite == null) coin.color = new Color(1f, 0.82f, 0.2f, 1f);
             coin.preserveAspect = true;
 #endif
         }
 
 #if CURVEMOTION_UGUI
-        static Image CreateImage(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Color color)
+        static Sprite LoadSprite(string file)
+        {
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>($"{ArtFolder}/{file}");
+            if (sprite == null) Debug.LogWarning($"[Curve Motion] 找不到 {ArtFolder}/{file}，改用纯色块。");
+            return sprite;
+        }
+
+        static Image CreateImage(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Sprite sprite)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
             var rect = (RectTransform)go.transform;
@@ -265,8 +277,34 @@ namespace Limbo.CurveMotion.Editor
             rect.anchoredPosition = anchoredPosition;
             rect.sizeDelta = size;
             var image = go.GetComponent<Image>();
-            image.color = color;
+            image.sprite = sprite;
+            image.color = sprite != null ? Color.white : new Color(0.55f, 0.35f, 0.2f, 1f);
             return image;
+        }
+
+        /// <summary>资源栏：胶囊底 + 左侧图标 + 数字。图标（名字为 iconName）是动效的落点对象。</summary>
+        static void CreateCounter(Transform parent, string iconName, Vector2 iconPosition, Vector2 iconSize, Sprite icon, string amount)
+        {
+            var bar = CreateImage(parent, iconName + " Bar", iconPosition + new Vector2(130f, -4f), new Vector2(240f, 80f), LoadSprite("ui_bar.png"));
+            bar.type = Image.Type.Sliced;
+
+            var labelGo = new GameObject("Amount", typeof(RectTransform), typeof(Text), typeof(Shadow));
+            var labelRect = (RectTransform)labelGo.transform;
+            labelRect.SetParent(bar.transform, false);
+            labelRect.anchoredPosition = new Vector2(30f, 4f);
+            labelRect.sizeDelta = new Vector2(160f, 64f);
+            var label = labelGo.GetComponent<Text>();
+            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            label.fontSize = 42;
+            label.fontStyle = FontStyle.Bold;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = Color.white;
+            label.raycastTarget = false;
+            label.text = amount;
+            labelGo.GetComponent<Shadow>().effectColor = new Color(0f, 0f, 0f, 0.45f);
+
+            var image = CreateImage(parent, iconName, iconPosition, iconSize, icon);
+            image.preserveAspect = true;
         }
 #endif
     }

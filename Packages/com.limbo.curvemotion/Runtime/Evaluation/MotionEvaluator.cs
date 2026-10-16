@@ -46,7 +46,20 @@ namespace Limbo.CurveMotion
         public float PathDuration { get; private set; }
 
         /// <summary>含循环的总时长，无限循环为 +∞。</summary>
-        public float TotalDuration => m_Data.loop.count < 0 ? float.PositiveInfinity : Duration * Math.Max(1, m_Data.loop.count);
+        public float TotalDuration => m_Data.loop.count < 0 ? float.PositiveInfinity : LoopStart + LoopLength * Math.Max(1, m_Data.loop.count);
+
+        /// <summary>循环部分的开始时间：整段循环为 0，尾段循环为最后一段路径的开始时间。</summary>
+        public float LoopStart
+        {
+            get
+            {
+                if (m_Data.loop.scope != MotionLoopScope.LastSegment || m_PointTimes.Length < 2) return 0f;
+                return Math.Min(m_PointTimes[m_PointTimes.Length - 2], Duration);
+            }
+        }
+
+        /// <summary>每次循环的长度：从 <see cref="LoopStart"/> 到单次播放结束。</summary>
+        public float LoopLength => Duration - LoopStart;
 
         public int SegmentCount => m_SegmentDurations.Length;
 
@@ -220,12 +233,23 @@ namespace Limbo.CurveMotion
             throw new ArgumentOutOfRangeException(nameof(clip));
         }
 
-        /// <summary>把总时间（含循环）换算成单次播放内的时间。Yoyo 的奇数次循环反向播放。</summary>
+        /// <summary>
+        /// 把总时间（含循环）换算成单次播放内的时间。Yoyo 的奇数次循环反向播放。
+        /// 尾段循环时，<see cref="LoopStart"/> 之前照常播放，之后只在尾段里循环。
+        /// </summary>
         public float ToLocalTime(float time)
         {
-            float d = Duration;
-            if (d <= 0f) return 0f;
+            if (Duration <= 0f) return 0f;
             time = Math.Max(0f, Math.Min(time, TotalDuration));
+            float start = LoopStart;
+            float d = LoopLength;
+            if (time <= start || d <= 0f) return Math.Min(time, Duration);
+            return start + ToLoopTime(time - start, d);
+        }
+
+        /// <summary>循环部分内的换算：time 从循环开始算，d 为每次循环的长度。</summary>
+        float ToLoopTime(float time, float d)
+        {
             int loop = (int)Math.Floor(time / d);
             float local;
             int count = m_Data.loop.count;

@@ -31,6 +31,8 @@ namespace Limbo.CurveMotion.Editor
         static readonly Color RowColorB = new Color(1f, 1f, 1f, 0.05f);
         static readonly Color TickColor = new Color(1f, 1f, 1f, 0.35f);
         static readonly Color GuideColor = new Color(1f, 1f, 1f, 0.07f);
+        static readonly Color LoopFillColor = new Color(0.42f, 0.6f, 1f, 0.1f);
+        static readonly Color LoopLineColor = new Color(0.42f, 0.6f, 1f, 0.85f);
         static readonly Color SegmentColorA = new Color(0.25f, 0.6f, 0.75f, 1f);
         static readonly Color SegmentColorB = new Color(0.2f, 0.5f, 0.65f, 1f);
         static readonly Color PointColor = new Color(0.85f, 0.85f, 0.85f, 1f);
@@ -221,6 +223,7 @@ namespace Limbo.CurveMotion.Editor
             float rowsHeight = rows * RowHeight;
             for (int i = 0; i < data.points.Count; i++)
                 EditorGUI.DrawRect(new Rect(TimeToX(eval.GetPointTime(i)), rowsTop, 1f, rowsHeight), GuideColor);
+            DrawLoopRange(data, eval, rowsTop, rowsHeight);
 
             DrawPathRow(window, data, eval);
             DrawEventRow(window, data, eval);
@@ -250,6 +253,22 @@ namespace Limbo.CurveMotion.Editor
                 float minor = TimeToX(t + step * 0.5f);
                 if (minor < ruler.xMax) EditorGUI.DrawRect(new Rect(minor, ruler.yMax - 3f, 1f, 3f), TickColor);
             }
+        }
+
+        /// <summary>循环的那一截（整段或尾段）加一层底色，并在后面标出循环范围和次数。</summary>
+        void DrawLoopRange(MotionData data, MotionEvaluator eval, float rowsTop, float rowsHeight)
+        {
+            var loop = data.loop;
+            if (loop.count == 1 || eval.LoopLength <= 0f) return;
+            float x0 = TimeToX(eval.LoopStart);
+            float x1 = TimeToX(eval.Duration);
+            EditorGUI.DrawRect(new Rect(x0, rowsTop, x1 - x0, rowsHeight), LoopFillColor);
+            EditorGUI.DrawRect(new Rect(x0, rowsTop, x1 - x0, 2f), LoopLineColor);
+            EditorGUI.DrawRect(new Rect(x0, rowsTop, 1f, rowsHeight), LoopLineColor);
+            EditorGUI.DrawRect(new Rect(x1 - 1f, rowsTop, 1f, rowsHeight), LoopLineColor);
+            string label = (eval.LoopStart > 0f ? "尾段循环 " : "整段循环 ") + (loop.count < 0 ? "无限" : "×" + loop.count) +
+                           (loop.type == MotionLoopType.Yoyo ? " Yoyo" : "");
+            GUI.Label(new Rect(x1 + 3f, rowsTop + 2f, 110f, RowHeight - 4f), label, EditorStyles.miniLabel);
         }
 
         static float PickStep(float pixelsPerSecond)

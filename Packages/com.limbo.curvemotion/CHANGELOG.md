@@ -7,6 +7,10 @@
 - 预览目标、落点对象和相机按资产记在本机，重新打开资产时自动填回。
 - 数据：MotionData 新增 endTarget（bound、kind、hint），JSON 输出 endTarget 与 authoredEnd，并说明运行时的终点修正方法；MotionEvaluator 新增 GetPathProgress、EvaluatePosition(time, endCorrection)、AuthoredEndOffset；MotionEditing 新增 SetEndOffset。
 - 测试场景新增两个混合示例：demo-heart-to-wallet（3D 爱心飞进 UI 钱包）、demo-coin-to-heart（UI 金币落到 3D 爱心上），双击即可预览。
+- 循环新增“尾段自循环”：前面只播一次，之后只循环最后一段路径（例如飞到位后原地浮动）；时间轴标出循环的那一截。数据：LoopSettings.scope（Whole / LastSegment），MotionEvaluator.LoopStart / LoopLength，JSON 的 loop.scope 与 loop.start。
+- 窗口分区：对象、时间轴、单段编辑（只改选中项）、全局编辑（整个动效）、提示与警告、导出，各自带色条标题；单段编辑的最后一段可一键设为自循环。
+- 提示与警告单独成区，固定在窗口下方，按错误 / 警告 / 提示分类显示。
+- 测试场景素材：新增钱包、宝石、星星图标和奖励面板、资源栏九宫格底图（tools/art/gen_ui_art.py 生成），替换原来的纯色钱包；旧测试场景会提示重建。
 
 ## [0.4.0] - 2026-10-15
 - 时间轴：标尺与播放头（点击/拖动定位）、路径段条（拖分界改段时长，速度模式反算速度）、事件行、每条属性轨道一行。
