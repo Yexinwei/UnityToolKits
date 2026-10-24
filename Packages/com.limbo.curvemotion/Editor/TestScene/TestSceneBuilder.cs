@@ -32,7 +32,7 @@ namespace Limbo.CurveMotion.Editor
         const string WalletName = "Wallet";
 
         /// <summary>场景内容变化时加 1；旧版本生成的场景会提示重建。记录在场景 .meta 的 userData 里。</summary>
-        const string SceneVersion = "curvemotion-test-scene:4";
+        const string SceneVersion = "curvemotion-test-scene:5";
 
         [MenuItem("Tools/Curve Motion/Open Test Scene", priority = 20)]
         public static void OpenTestScene()
@@ -216,6 +216,7 @@ namespace Limbo.CurveMotion.Editor
             camera.transform.SetPositionAndRotation(new Vector3(0f, 0.3f, -12.5f), Quaternion.identity);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.44f, 0.76f, 0.97f, 1f);
+            camera.orthographicSize = 6.5f; // 2D 工程的默认相机是正交的，6.5 下竖屏里爱心和地台完整可见
             return camera;
         }
 
