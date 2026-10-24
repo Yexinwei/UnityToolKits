@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generator": "com.limbo.curvemotion",
   "name": "CoinFlyToWallet",
-  "description": "金币从奖励弹窗弹起后沿弧线飞向右上角钱包，途中放大再缩小，抵达时淡出。",
+  "description": "金币从奖励卡弹起后沿弧线飞向左上角钱包（终点绑定钱包），途中放大再缩小，抵达前淡出。",
   "target": "RectTransform",
   "conventions": {
     "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
@@ -12,12 +12,22 @@
     "pathTiming": "Each segment moves at constant speed along its arc length, shaped by the segment ease.",
     "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
     "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
-    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent]."
+    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].",
+    "loop": "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start (the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. Yoyo plays every other repeat backwards.",
+    "endTarget": "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. Then add (actualEnd - authoredEnd) * pathProgress to every evaluated position, where pathProgress is the travelled fraction of the total arc length (0 at the start, 1 at the end)."
   },
-  "duration": 0.74571,
+  "duration": 0.85041,
   "loop": {
     "count": 1,
-    "type": "Restart"
+    "type": "Restart",
+    "scope": "Whole",
+    "start": 0
+  },
+  "endTarget": {
+    "bound": true,
+    "kind": "RectTransform",
+    "hint": "左上角钱包",
+    "authoredEnd": [-419, 1451, 0]
   },
   "path": {
     "points": [
@@ -25,25 +35,25 @@
         "id": "start",
         "type": "Auto",
         "position": [0, 0, 0],
-        "inTangent": [13.33333, -26.66667, 0],
-        "outTangent": [-13.33333, 26.66667, 0],
+        "inTangent": [-25, -43.33334, 0],
+        "outTangent": [25, 43.33334, 0],
         "time": 0
       },
       {
         "id": "apex",
         "type": "Auto",
-        "position": [-80, 160, 0],
-        "inTangent": [-70, -106.66667, 0],
-        "outTangent": [70, 106.66667, 0],
+        "position": [150, 260, 0],
+        "inTangent": [69.83334, -241.83334, 0],
+        "outTangent": [-69.83334, 241.83334, 0],
         "time": 0.25
       },
       {
         "id": "wallet",
         "type": "Auto",
-        "position": [420, 640, 0],
-        "inTangent": [-83.33334, -80, 0],
-        "outTangent": [83.33334, 80, 0],
-        "time": 0.74571
+        "position": [-419, 1451, 0],
+        "inTangent": [94.83334, -198.5, 0],
+        "outTangent": [-94.83334, 198.5, 0],
+        "time": 0.85041
       }
     ],
     "segments": [
@@ -53,23 +63,23 @@
         "timing": "Duration",
         "duration": 0.25,
         "speed": 1,
-        "length": 210.90271,
+        "length": 349.0502,
         "ease": {
           "type": "OutQuad"
         },
-        "desc": "向左上弹起"
+        "desc": "向右上弹起"
       },
       {
         "from": "apex",
         "to": "wallet",
         "timing": "Speed",
-        "duration": 0.49571,
-        "speed": 1400,
-        "length": 693.99951,
+        "duration": 0.60041,
+        "speed": 2200,
+        "length": 1320.9021,
         "ease": {
           "type": "InQuad"
         },
-        "desc": "加速飞向钱包"
+        "desc": "加速飞向左上角钱包"
       }
     ]
   },
@@ -97,8 +107,8 @@
           "anchor": "apex",
           "offset": 0.05,
           "start": 0.3,
-          "end": 0.6,
-          "duration": 0.3,
+          "end": 0.7,
+          "duration": 0.4,
           "ease": {
             "type": "InQuad"
           },
@@ -117,8 +127,8 @@
         {
           "anchor": "wallet",
           "offset": -0.08,
-          "start": 0.66571,
-          "end": 0.74571,
+          "start": 0.77041,
+          "end": 0.85041,
           "duration": 0.08,
           "ease": {
             "type": "Linear"
@@ -133,7 +143,7 @@
     {
       "anchor": "wallet",
       "offset": 0,
-      "time": 0.74571,
+      "time": 0.85041,
       "name": "OnCoinArrive",
       "message": "coin arrived at wallet"
     }

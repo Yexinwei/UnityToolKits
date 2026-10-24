@@ -96,7 +96,14 @@ namespace Limbo.CurveMotion.Editor
         public Matrix4x4 GetPathMatrix(Transform target)
         {
             if (target == null) return Matrix4x4.identity;
-            return GetPathMatrix(target, target == m_Target ? m_StartLocalPosition : target.localPosition);
+            return GetPathMatrix(target, GetStartLocalPosition(target));
+        }
+
+        /// <summary>对象的起始 localPosition：预览中是开始预览时记下的值，否则是当前值。</summary>
+        public Vector3 GetStartLocalPosition(Transform target)
+        {
+            if (target == null) return Vector3.zero;
+            return target == m_Target ? m_StartLocalPosition : target.localPosition;
         }
 
         void RestoreState()

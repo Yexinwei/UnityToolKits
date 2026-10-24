@@ -6,11 +6,14 @@ using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+#if !UNITY_2021_2_OR_NEWER
+using UnityEditor.Experimental.SceneManagement;
+#endif
 
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// 曲线运动编辑器主窗口：选择资产与预览目标、时间轴（路径段、事件、属性轨道）、选中项的参数、
+    /// 曲线运动编辑器主窗口：选择资产、预览目标与落点对象、时间轴（路径段、事件、属性轨道）、选中项的参数、
     /// 在场景里预览、导入导出 JSON。Scene 视图中的绘制与手柄见 <see cref="PathSceneEditor"/>，
     /// 时间轴的绘制与拖拽见 <see cref="TimelineView"/>。
     /// </summary>
@@ -18,6 +21,8 @@ namespace Limbo.CurveMotion.Editor
     {
         [SerializeField] MotionAsset m_Asset;
         [SerializeField] Transform m_Target;
+        [SerializeField] Transform m_EndTarget;
+        [SerializeField] Camera m_WorldCamera;
         [SerializeField] bool m_EditPath = true;
         [SerializeField] bool m_Preview;
         [SerializeField] bool m_LoopPreview;
@@ -34,9 +39,12 @@ namespace Limbo.CurveMotion.Editor
         [SerializeField] bool m_GridSnap;
         [SerializeField] float m_GridSizeUi = 10f;
         [SerializeField] float m_GridSize3D = 0.1f;
-        [SerializeField] bool m_ShowSettings = true;
+        [SerializeField] Vector2 m_ProblemScroll;
 
         bool m_Playing;
+        bool m_EndSyncFailed;
+        bool m_RestoringContext;
+        MotionAsset m_PendingContext; // 请求了回到上次的场景/预制体但还没打开（例如预制体模式下一帧才就绪）
         double m_LastTick;
         MotionEvaluator m_Eval;
         readonly MotionPreview m_PreviewState = new MotionPreview();
@@ -73,6 +81,7 @@ namespace Limbo.CurveMotion.Editor
 
         internal MotionAsset Asset => m_Asset;
         internal Transform Target => m_Target;
+        internal Transform EndObject => m_EndTarget;
         internal bool EditPath => m_EditPath;
         internal int Selected => m_Selected;
         internal int SelectedTrack => m_SelTrack;
@@ -81,6 +90,15 @@ namespace Limbo.CurveMotion.Editor
         internal bool SnapTimeline => m_SnapTimeline;
         internal bool IsUiTarget => m_Asset != null && m_Asset.data.target == TargetKind.RectTransform;
         internal bool HasClipboard => s_ClipboardClip != null || s_ClipboardEvent != null;
+
+        /// <summary>终点正跟随落点对象：终点位置由落点对象决定，不能手动改。</summary>
+        internal bool IsEndLocked => m_Asset != null && m_Target != null && m_EndTarget != null && EndBinding.bound
+            && m_Asset.data.points.Count >= 2 && !m_EndTarget.IsChildOf(m_Target);
+
+        /// <summary>预览目标与落点对象一个是 UI、一个是 3D，终点按屏幕位置对准。</summary>
+        internal bool IsCrossSpace => MixedSpace.IsCrossSpace(m_Target, m_EndTarget);
+
+        internal EndTarget EndBinding => m_Asset.data.endTarget ?? (m_Asset.data.endTarget = new EndTarget());
 
         internal MotionEvaluator Evaluator
         {
@@ -420,7 +438,10 @@ namespace Limbo.CurveMotion.Editor
             EditorApplication.update += OnEditorUpdate;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             AssemblyReloadEvents.beforeAssemblyReload += StopPreview;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EditorSceneManager.sceneSaving += OnSceneSaving;
+            PrefabStage.prefabSaving += OnPrefabSaving;
+            PrefabStage.prefabStageClosing += OnPrefabStageClosing;
             // 域重载后预览状态已丢失，避免把中途的变换当成初始值。
             m_Preview = false;
             m_Playing = false;
@@ -434,7 +455,10 @@ namespace Limbo.CurveMotion.Editor
             EditorApplication.update -= OnEditorUpdate;
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
             AssemblyReloadEvents.beforeAssemblyReload -= StopPreview;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
             EditorSceneManager.sceneSaving -= OnSceneSaving;
+            PrefabStage.prefabSaving -= OnPrefabSaving;
+            PrefabStage.prefabStageClosing -= OnPrefabStageClosing;
         }
 
         void OnSceneGUI(SceneView view)
@@ -445,6 +469,8 @@ namespace Limbo.CurveMotion.Editor
 
         void OnUndoRedo()
         {
+            // 撤销“设置落点对象”时窗口状态也会回退，预览要与之对齐。
+            if (m_Preview && (!m_PreviewState.IsActive || m_PreviewState.Target != m_Target)) StopPreview();
             m_Eval = null;
             ClampSelection();
             if (m_Preview && m_Asset != null) m_PreviewState.CaptureTracks(m_Asset.data);
@@ -461,8 +487,20 @@ namespace Limbo.CurveMotion.Editor
         // 保存场景前还原对象，避免把预览中的位置、缩放等存进场景。
         void OnSceneSaving(UnityEngine.SceneManagement.Scene scene, string path) => StopPreview();
 
+        // 预制体模式里同理；退出预制体模式时预览目标会被销毁，先还原。
+        void OnPrefabSaving(GameObject root)
+        {
+            if (m_PreviewState.IsActive && root != null && m_PreviewState.Target.IsChildOf(root.transform)) StopPreview();
+        }
+
+        void OnPrefabStageClosing(PrefabStage stage)
+        {
+            if (m_PreviewState.IsActive && stage != null && stage.IsPartOfPrefabContents(m_PreviewState.Target.gameObject)) StopPreview();
+        }
+
         void OnEditorUpdate()
         {
+            SyncEndToTarget();
             if (!m_Playing || m_Asset == null) return;
             double now = EditorApplication.timeSinceStartup;
             float dt = (float)(now - m_LastTick);
@@ -471,7 +509,9 @@ namespace Limbo.CurveMotion.Editor
             float end = PreviewLength;
             if (m_Time >= end)
             {
-                if (m_LoopPreview && end > 0f) m_Time %= end;
+                // 无限循环在循环部分里来回绕（尾段自循环不再重播前面），有限次数的从头重播。
+                float from = float.IsInfinity(Evaluator.TotalDuration) ? Evaluator.LoopStart : 0f;
+                if (m_LoopPreview && end - from > 0f) m_Time = from + (m_Time - from) % (end - from);
                 else { m_Time = end; m_Playing = false; }
             }
             ApplyPreview();
@@ -486,18 +526,113 @@ namespace Limbo.CurveMotion.Editor
                 var eval = Evaluator;
                 if (eval == null) return 0f;
                 if (!float.IsInfinity(eval.TotalDuration)) return eval.TotalDuration;
-                return eval.Duration * (m_Asset.data.loop.type == MotionLoopType.Yoyo ? 2f : 1f);
+                return eval.LoopStart + eval.LoopLength * (m_Asset.data.loop.type == MotionLoopType.Yoyo ? 2f : 1f);
             }
         }
 
+        /// <summary>
+        /// 切换资产，并按资产里记的上次编辑位置填回预览目标、落点对象和相机。
+        /// 那个场景/预制体没打开时，开着“自动”就回到那里（下一帧打开，有未保存修改会先问）。再次打开同一个资产也会重试。
+        /// </summary>
         internal void SetAsset(MotionAsset asset)
         {
-            if (asset == m_Asset) return;
+            if (asset != m_Asset)
+            {
+                m_PendingContext = null;
+                StopPreview();
+                m_Asset = asset;
+                m_Eval = null;
+                m_Selected = m_SelTrack = m_SelClip = m_SelEvent = -1;
+                m_Time = 0f;
+                // 落点对象和相机跟着资产走；预览目标没记录时保留当前的。
+                m_EndTarget = null;
+                m_WorldCamera = null;
+            }
+            RestoreContext(EditContextStore.AutoOpen);
+            SyncEndToTarget();
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        MotionEditContext EditContext => m_Asset != null && m_Asset.editContext != null && !m_Asset.editContext.IsEmpty ? m_Asset.editContext : null;
+
+        void RestoreContext(bool allowOpen)
+        {
+            var ctx = EditContext;
+            if (ctx == null) return;
+            if (EditContextStore.IsOpen(ctx.Main))
+            {
+                ApplyContext(ctx);
+                return;
+            }
+            if (!allowOpen || EditorApplication.isPlayingOrWillChangePlaymode || string.IsNullOrEmpty(EditContextStore.ContainerPath(ctx.Main))) return;
+            // 在 OnGUI 或打开资产的回调里切场景不安全，放到下一帧。
+            var asset = m_Asset;
+            EditorApplication.delayCall += () =>
+            {
+                if (this != null && m_Asset == asset) OpenContext();
+            };
+        }
+
+        /// <summary>填回记录里能找到的对象。onlyMissing：只补窗口里空着的（撤销删除、对象重新出现时）。填回不算修改，不写资产。</summary>
+        void ApplyContext(MotionEditContext ctx, bool onlyMissing = false)
+        {
+            var mover = onlyMissing && m_Target != null ? null : EditContextStore.Resolve(ctx.mover);
+            var end = onlyMissing && m_EndTarget != null ? null : EditContextStore.Resolve(ctx.endTarget);
+            var cameraTransform = onlyMissing && m_WorldCamera != null ? null : EditContextStore.Resolve(ctx.camera);
+            m_RestoringContext = true;
+            try
+            {
+                if (end != null) m_EndTarget = end;
+                if (cameraTransform != null) m_WorldCamera = cameraTransform.GetComponent<Camera>();
+                if (mover != null) SetTarget(mover);
+            }
+            finally
+            {
+                m_RestoringContext = false;
+            }
+        }
+
+        void FinishOpenContext(MotionEditContext ctx)
+        {
+            m_PendingContext = null;
+            ApplyContext(ctx);
+            SyncEndToTarget();
+            if (m_Target != null) Selection.activeTransform = m_Target;
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        // 记录里的对象被删后又撤销回来、或换了场景后出现时，自动补回窗口；请求过回到上次的地方、那里刚打开时，整套填回。
+        void OnHierarchyChanged()
+        {
+            var ctx = EditContext;
+            if (ctx == null || !EditContextStore.IsOpen(ctx.Main)) return;
+            if (m_PendingContext != null && m_PendingContext == m_Asset)
+            {
+                FinishOpenContext(ctx);
+                return;
+            }
+            bool missing = (m_Target == null && !ctx.mover.IsEmpty) || (m_EndTarget == null && !ctx.endTarget.IsEmpty)
+                || (m_WorldCamera == null && !ctx.camera.IsEmpty);
+            if (!missing) return;
+            var before = (m_Target, m_EndTarget, m_WorldCamera);
+            ApplyContext(ctx, onlyMissing: true);
+            if (before == (m_Target, m_EndTarget, m_WorldCamera)) return;
+            SyncEndToTarget();
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        /// <summary>回到上次编辑的场景/预制体，并填回预览目标、落点对象和相机。</summary>
+        void OpenContext()
+        {
+            var ctx = EditContext;
+            if (ctx == null) return;
             StopPreview();
-            m_Asset = asset;
-            m_Eval = null;
-            m_Selected = m_SelTrack = m_SelClip = m_SelEvent = -1;
-            m_Time = 0f;
+            m_PendingContext = null;
+            if (EditContextStore.Open(ctx.Main)) FinishOpenContext(ctx);
+            else m_PendingContext = m_Asset;
             Repaint();
             SceneView.RepaintAll();
         }
@@ -508,6 +643,8 @@ namespace Limbo.CurveMotion.Editor
             bool wasPreviewing = m_Preview;
             StopPreview();
             m_Target = target;
+            // 先记录再记 Undo：撤销类型变化时不把“上次编辑”也退回去（窗口里的预览目标不撤销）。
+            SaveMover();
             if (m_Target != null && m_Asset != null)
             {
                 var kind = m_Target is RectTransform ? TargetKind.RectTransform : TargetKind.Transform;
@@ -518,7 +655,98 @@ namespace Limbo.CurveMotion.Editor
                     MarkChanged();
                 }
             }
+            SyncEndToTarget();
             if (wasPreviewing) StartPreview();
+            SceneView.RepaintAll();
+        }
+
+        /// <summary>
+        /// 指定落点对象：动效改为终点绑定，路径终点自动对准它。可以是 UI 也可以是 3D 物体，类型不同时经屏幕坐标换算。
+        /// 传 null 只清掉预览用的对象，动效仍保留终点绑定（运行时由代码传入落点）。
+        /// </summary>
+        internal void SetEndTarget(Transform end)
+        {
+            if (end == m_EndTarget) return;
+            if (end != null && m_Target != null && end.IsChildOf(m_Target))
+            {
+                ShowNotification(new GUIContent("落点对象不能是预览目标本身或它的子节点"));
+                return;
+            }
+            // 窗口也记进 Undo，撤销时落点对象和绑定一起回去。
+            if (m_Asset != null) Undo.RecordObjects(new UnityEngine.Object[] { m_Asset, this }, "Set End Target");
+            m_EndTarget = end;
+            if (end != null && m_Asset != null)
+            {
+                var binding = EndBinding;
+                var kind = MixedSpace.IsUi(end) ? TargetKind.RectTransform : TargetKind.Transform;
+                if (!binding.bound || binding.kind != kind || string.IsNullOrEmpty(binding.hint))
+                {
+                    binding.bound = true;
+                    binding.kind = kind;
+                    if (string.IsNullOrEmpty(binding.hint)) binding.hint = end.name;
+                    MarkChanged();
+                }
+            }
+            SaveContext(EditContextStore.Slots.End);
+            SyncEndToTarget();
+            Repaint();
+            SceneView.RepaintAll();
+        }
+
+        void SetWorldCamera(Camera camera)
+        {
+            if (camera == m_WorldCamera) return;
+            m_WorldCamera = camera;
+            SaveContext(EditContextStore.Slots.Camera);
+            SyncEndToTarget();
+        }
+
+        /// <summary>把用户刚改的那一项（连同所在的场景/预制体）记进资产，有变化才写。填回记录时不写。</summary>
+        void SaveContext(EditContextStore.Slots slots)
+        {
+            if (m_Asset == null || m_RestoringContext) return;
+            m_PendingContext = null; // 用户已经在别处指定了对象，之后打开那个场景也不再覆盖
+            EditContextStore.Save(m_Asset, slots, m_Target, m_EndTarget, m_WorldCamera);
+        }
+
+        /// <summary>记预览目标。换到了别的场景/预制体时，落点对象和相机的旧记录属于原来的地方，按窗口当前的值一起更新。</summary>
+        void SaveMover()
+        {
+            if (m_Asset == null || m_RestoringContext) return;
+            var slots = EditContextStore.Slots.Mover;
+            var main = EditContext?.Main;
+            var fresh = EditContextStore.Capture(m_Target);
+            if (main != null && !fresh.IsEmpty && (fresh.container != main.container || fresh.prefab != main.prefab))
+                slots = EditContextStore.Slots.All;
+            SaveContext(slots);
+        }
+
+        /// <summary>
+        /// 终点跟随落点对象：每帧把最后一个路径点放到落点对象的位置（相对起点），所见即所得。
+        /// 这是编辑器里的做法；运行时和导出代码不改路径，而是按路径进度把终点偏差分摊到整条路径上（结果一样）。
+        /// 这里的改动不记 Undo：它由落点位置推导出来，撤销后下一帧会重新对准。
+        /// </summary>
+        void SyncEndToTarget()
+        {
+            if (!IsEndLocked)
+            {
+                m_EndSyncFailed = false;
+                return;
+            }
+            var startLocal = m_PreviewState.GetStartLocalPosition(m_Target);
+            var camera = MixedSpace.ResolveWorldCamera(m_WorldCamera);
+            bool ok = MixedSpace.TryGetEndOffset(m_Target, startLocal, m_EndTarget, camera, out var offset);
+            if (ok != !m_EndSyncFailed)
+            {
+                m_EndSyncFailed = !ok;
+                Repaint();
+            }
+            if (!ok) return;
+            if (!MotionEditing.SetEndOffset(m_Asset.data, offset, IsUiTarget ? 0.01f : 1e-4f)) return;
+            EditorUtility.SetDirty(m_Asset);
+            Evaluator?.Rebuild();
+            ApplyPreview();
+            Repaint();
             SceneView.RepaintAll();
         }
 
@@ -527,14 +755,17 @@ namespace Limbo.CurveMotion.Editor
             if (m_Target == null || m_Asset == null) return;
             m_PreviewState.Begin(m_Target, m_Asset.data);
             m_Preview = true;
+            SaveMover();
             ApplyPreview();
         }
 
         void StopPreview()
         {
             m_Playing = false;
+            bool wasActive = m_PreviewState.IsActive;
             m_Preview = false;
             m_PreviewState.End();
+            if (wasActive) RepaintGameView();
         }
 
         void TogglePlay()
@@ -555,6 +786,24 @@ namespace Limbo.CurveMotion.Editor
         {
             if (!m_Preview || !m_PreviewState.IsActive || Evaluator == null) return;
             m_PreviewState.Apply(Evaluator, LocalTime);
+            RepaintGameView();
+        }
+
+        static readonly Type s_GameViewType = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
+
+        /// <summary>非播放模式下改了对象，Game 视图不会自己刷新；UI 和 3D 叠在一起的效果要在 Game 视图里看。</summary>
+        static void RepaintGameView()
+        {
+            EditorApplication.QueuePlayerLoopUpdate();
+            if (s_GameViewType == null) return;
+            foreach (var view in Resources.FindObjectsOfTypeAll(s_GameViewType))
+                (view as EditorWindow)?.Repaint();
+        }
+
+        static void OpenGameView()
+        {
+            if (EditorApplication.ExecuteMenuItem("Window/General/Game")) return;
+            if (s_GameViewType != null) GetWindow(s_GameViewType).Show();
         }
 
         void ClampSelection()
@@ -575,26 +824,34 @@ namespace Limbo.CurveMotion.Editor
 
         void OnGUI()
         {
+            WindowSection.Begin("对象", "动效资产、在谁身上预览、飞到哪里", WindowSection.ObjectAccent);
             DrawHeader();
             if (m_Asset == null)
             {
                 EditorGUILayout.HelpBox("选择一个 Motion Asset，或点“新建”。也可以在 Project 窗口双击 Motion Asset 打开。", MessageType.Info);
                 if (GUILayout.Button("打开测试场景（自带示例动效）")) TestSceneBuilder.OpenTestScene();
+                WindowSection.End();
                 return;
             }
+            WindowSection.End();
 
             ClampSelection();
             HandleShortcuts();
+
+            WindowSection.Begin("时间轴", "双击空白处添加，右键更多操作，空格播放/暂停", WindowSection.TimelineAccent);
             DrawToolbar();
             m_Timeline.Draw(this);
-            EditorGUILayout.LabelField("双击空白处添加，右键更多操作，拖动片段两端改时长；空格播放/暂停。", EditorStyles.wordWrappedMiniLabel);
+            WindowSection.End();
 
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
-            DrawInspector();
-            DrawMotionSettings();
-            DrawWarnings();
+            DrawSingleEdit();
+            DrawGlobalEdit();
+            GUILayout.Space(4f);
             EditorGUILayout.EndScrollView();
+
+            DrawProblems();
             DrawFooter();
+            GUILayout.Space(4f);
         }
 
         /// <summary>窗口获得焦点时的快捷键：Delete 删除、Ctrl/⌘+D 复制一份、Ctrl/⌘+C/V 复制粘贴、空格播放。</summary>
@@ -656,29 +913,80 @@ namespace Limbo.CurveMotion.Editor
                     GUIUtility.ExitGUI();
                 }
             }
+            DrawContextRow();
 
             using (new EditorGUILayout.HorizontalScope())
             {
                 var target = (Transform)EditorGUILayout.ObjectField(
                     new GUIContent("预览目标", "场景里的对象。路径从它的当前位置开始绘制，预览时在它身上播放，结束自动还原。"),
                     m_Target, typeof(Transform), true);
-                if (target != m_Target) SetTarget(target);
+                // 换对象会改变下面显示哪些行（相机、提示），跳过本次剩余的绘制。
+                if (target != m_Target) { SetTarget(target); GUIUtility.ExitGUI(); }
                 using (new EditorGUI.DisabledScope(Selection.activeTransform == null))
                 {
-                    if (GUILayout.Button("用选中", GUILayout.Width(48))) SetTarget(Selection.activeTransform);
+                    if (GUILayout.Button("用选中", GUILayout.Width(48))) { SetTarget(Selection.activeTransform); GUIUtility.ExitGUI(); }
                 }
             }
 
-            if (m_Asset != null)
+            if (m_Asset == null) return;
+
+            using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField("对象类型",
-                    m_Asset.data.target == TargetKind.RectTransform ? "UI（anchoredPosition，单位像素）" : "Transform（localPosition，单位 Unity 单位）");
+                var end = (Transform)EditorGUILayout.ObjectField(
+                    new GUIContent("落点对象", "可选。指定后路径终点自动对准它，例如 3D 物体飞到 UI 图标上、UI 图片飞到 3D 模型上。" +
+                        "UI 与 3D 之间按屏幕位置对准，效果在 Game 视图里看。"),
+                    m_EndTarget, typeof(Transform), true);
+                if (end != m_EndTarget) { SetEndTarget(end); GUIUtility.ExitGUI(); }
+                using (new EditorGUI.DisabledScope(Selection.activeTransform == null))
+                {
+                    if (GUILayout.Button("用选中", GUILayout.Width(48))) { SetEndTarget(Selection.activeTransform); GUIUtility.ExitGUI(); }
+                }
+            }
+
+            if (IsCrossSpace)
+            {
+                var camera = (Camera)EditorGUILayout.ObjectField(
+                    new GUIContent("3D 相机", "UI 与 3D 换算屏幕位置用的相机。留空自动用 Main Camera。"),
+                    m_WorldCamera, typeof(Camera), true);
+                if (camera != m_WorldCamera) SetWorldCamera(camera);
+            }
+
+            EditorGUILayout.LabelField("对象类型",
+                m_Asset.data.target == TargetKind.RectTransform ? "UI（anchoredPosition，单位像素）" : "Transform（localPosition，单位 Unity 单位）");
+        }
+
+        /// <summary>“上次编辑”一行：资产里记着的场景/预制体，没打开时可一键回去；“自动”控制打开资产时是否自动回去。</summary>
+        void DrawContextRow()
+        {
+            var ctx = EditContext;
+            if (ctx == null) return;
+            var main = ctx.Main;
+            string path = EditContextStore.ContainerPath(main);
+            bool missing = string.IsNullOrEmpty(path);
+            bool open = !missing && EditContextStore.IsOpen(main);
+            string text = missing ? "场景/预制体已不存在"
+                : (main.prefab ? "预制体 " : "场景 ") + Path.GetFileNameWithoutExtension(path) + (open ? "（已打开）" : "");
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(
+                    new GUIContent("上次编辑", "资产里记着上次在哪个场景/预制体里编辑，以及预览目标、落点对象和相机。打开或拖入资产时据此填回。"),
+                    new GUIContent(text, missing ? "" : path), EditorStyles.miniLabel);
+                using (new EditorGUI.DisabledScope(missing || open))
+                {
+                    if (GUILayout.Button(new GUIContent("打开", "打开上次编辑的场景/预制体，并填回预览目标、落点对象和相机"), EditorStyles.miniButton, GUILayout.Width(40)))
+                    {
+                        OpenContext();
+                        GUIUtility.ExitGUI();
+                    }
+                }
+                bool auto = GUILayout.Toggle(EditContextStore.AutoOpen,
+                    new GUIContent("自动", "打开或拖入资产时，自动回到上次编辑的场景/预制体（本机设置）"), GUILayout.Width(44));
+                if (auto != EditContextStore.AutoOpen) EditContextStore.AutoOpen = auto;
             }
         }
 
         void DrawToolbar()
         {
-            EditorGUILayout.Space(2);
             using (new EditorGUILayout.HorizontalScope())
             {
                 bool edit = GUILayout.Toggle(m_EditPath, new GUIContent("编辑路径", "在 Scene 视图中显示路径手柄"), EditorStyles.miniButtonLeft);
@@ -702,6 +1010,9 @@ namespace Limbo.CurveMotion.Editor
                 }
                 m_LoopPreview = GUILayout.Toggle(m_LoopPreview, new GUIContent("循环预览", "预览一直循环播放（与动效本身的循环设置无关）"), GUILayout.Width(72));
                 GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("Game 视图", "打开 Game 视图。UI 和 3D 叠在一起的实际效果在这里看，预览时实时刷新。"),
+                        EditorStyles.miniButton, GUILayout.Width(72)))
+                    OpenGameView();
             }
 
             using (new EditorGUILayout.HorizontalScope())
@@ -726,18 +1037,27 @@ namespace Limbo.CurveMotion.Editor
             EditorGUILayout.Space(2);
         }
 
-        void DrawInspector()
+        /// <summary>单段编辑：只改选中的那一项（路径点与它出发的路径段、片段、轨道、事件）。</summary>
+        void DrawSingleEdit()
         {
             var data = m_Asset.data;
+            WindowSection.Begin("单段编辑 · " + SelectionName(data), "只改选中的这一项", WindowSection.SingleAccent);
             if (m_SelClip >= 0) DrawClipInspector(data);
             else if (m_SelTrack >= 0) DrawTrackInspector(data);
             else if (m_SelEvent >= 0) DrawEventInspector(data);
             else if (m_Selected >= 0 && m_Selected < data.points.Count) DrawSelectedPoint();
-            else
-            {
-                EditorGUILayout.Space();
-                EditorGUILayout.HelpBox("在时间轴上点选路径段、事件或片段来编辑；Scene 视图里点击路径点选点。", MessageType.None);
-            }
+            else EditorGUILayout.LabelField("在时间轴上点选路径段、事件或片段；或在 Scene 视图里点击路径点。", EditorStyles.wordWrappedMiniLabel);
+            WindowSection.End();
+        }
+
+        string SelectionName(MotionData data)
+        {
+            if (m_SelClip >= 0) return "片段";
+            if (m_SelTrack >= 0) return "轨道";
+            if (m_SelEvent >= 0) return "事件";
+            if (m_Selected >= 0 && m_Selected < data.points.Count)
+                return m_Selected < data.points.Count - 1 ? $"路径点 {m_Selected} 与路径段 {m_Selected}→{m_Selected + 1}" : $"路径点 {m_Selected}（终点）";
+            return "未选中";
         }
 
         // ---------------------------------------------------------------- 路径点与路径段
@@ -748,12 +1068,17 @@ namespace Limbo.CurveMotion.Editor
             var eval = Evaluator;
             var p = data.points[m_Selected];
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"路径点 {m_Selected}（到达 {eval.GetPointTime(m_Selected):0.###}s）", EditorStyles.boldLabel);
+            WindowSection.SubHeading($"路径点 {m_Selected}（到达 {eval.GetPointTime(m_Selected):0.###}s）");
 
             if (m_Selected == 0)
             {
                 EditorGUILayout.HelpBox("起点固定在对象的初始位置，要改起点请直接移动对象。", MessageType.None);
+            }
+            else if (IsEndLocked && m_Selected == data.points.Count - 1)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.Vector3Field("位置（相对起点）", p.position - data.points[0].position);
+                EditorGUILayout.HelpBox($"终点跟随落点对象“{m_EndTarget.name}”。要手动改，先清空落点对象，或在动效设置里取消终点绑定。", MessageType.None);
             }
             else
             {
@@ -807,8 +1132,7 @@ namespace Limbo.CurveMotion.Editor
             var seg = p.segment ?? (p.segment = new SegmentSettings());
             if (seg.ease == null) seg.ease = new EaseSpec { type = EaseType.Linear };
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"路径段 {index} → {index + 1}", EditorStyles.boldLabel);
+            WindowSection.SubHeading($"路径段 {index} → {index + 1}");
 
             EditorGUI.BeginChangeCheck();
             var timing = (TimingMode)EditorGUILayout.EnumPopup(new GUIContent("计时方式", "Duration 填时长 / Speed 填速度，按弧长自动算时长"), seg.timing);
@@ -839,7 +1163,24 @@ namespace Limbo.CurveMotion.Editor
 
             EditorGUILayout.LabelField("实际时长 / 弧长",
                 $"{eval.GetSegmentDuration(index):0.###}s / {eval.GetSegmentLength(index):0.##}{(IsUiTarget ? " px" : "")}");
+
+            if (index != eval.SegmentCount - 1) return;
+            var loop = m_Asset.data.loop;
+            if (loop.scope == MotionLoopScope.LastSegment && loop.count != 1)
+            {
+                EditorGUILayout.LabelField($"这是尾段，正在自循环（{LoopCountText(loop.count)}，{loop.type}），在下方全局编辑里修改。", EditorStyles.wordWrappedMiniLabel);
+            }
+            else if (GUILayout.Button(new GUIContent("让这一段自循环", "前面只播一次，之后只循环这最后一段（全局编辑里的循环范围改为尾段，次数默认无限）")))
+            {
+                RecordUndo("Loop Last Segment");
+                loop.scope = MotionLoopScope.LastSegment;
+                if (loop.count == 1) loop.count = -1;
+                MarkChanged();
+                GUIUtility.ExitGUI();
+            }
         }
+
+        static string LoopCountText(int count) => count < 0 ? "无限次" : $"共 {count} 次";
 
         // ---------------------------------------------------------------- 轨道、片段、事件
 
@@ -862,8 +1203,7 @@ namespace Limbo.CurveMotion.Editor
         void DrawTrackInspector(MotionData data)
         {
             var track = data.tracks[m_SelTrack];
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"轨道 · {TrackTitle(track)}", EditorStyles.boldLabel);
+            WindowSection.SubHeading($"轨道 · {TrackTitle(track)}");
 
             EditorGUI.BeginChangeCheck();
             string name = EditorGUILayout.TextField("名称", track.name ?? "");
@@ -895,8 +1235,7 @@ namespace Limbo.CurveMotion.Editor
             if (clip.ease == null) clip.ease = new EaseSpec();
             eval.TryGetClipRange(m_SelTrack, m_SelClip, out float start, out float end);
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"片段 · {TrackTitle(track)}", EditorStyles.boldLabel);
+            WindowSection.SubHeading($"片段 · {TrackTitle(track)}");
 
             EditorGUI.BeginChangeCheck();
             string anchor = AnchorPopup(clip.anchor, data, eval);
@@ -972,8 +1311,7 @@ namespace Limbo.CurveMotion.Editor
             var motionEvent = data.events[m_SelEvent];
             float time = eval.GetEventTime(m_SelEvent);
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"事件（{time:0.###}s）", EditorStyles.boldLabel);
+            WindowSection.SubHeading($"事件（{time:0.###}s）");
             EditorGUILayout.LabelField("导出时先生成一条日志占位，接入正式项目后替换成实际回调。", EditorStyles.wordWrappedMiniLabel);
 
             EditorGUI.BeginChangeCheck();
@@ -1013,68 +1351,217 @@ namespace Limbo.CurveMotion.Editor
             return selected == index ? anchor : data.points[selected].id;
         }
 
-        // ---------------------------------------------------------------- 动效设置
+        // ---------------------------------------------------------------- 全局编辑
 
-        void DrawMotionSettings()
+        static readonly GUIContent[] s_LoopScopeLabels =
+        {
+            new GUIContent("整段循环", "整个动效从头循环"),
+            new GUIContent("尾段自循环", "前面只播一次，之后只循环最后一段路径（从最后一段开始到结尾），例如飞到位后原地浮动"),
+        };
+
+        /// <summary>全局编辑：作用于整个动效的设置（名称、描述、循环、终点绑定）。</summary>
+        void DrawGlobalEdit()
         {
             var data = m_Asset.data;
-            EditorGUILayout.Space();
-            m_ShowSettings = EditorGUILayout.Foldout(m_ShowSettings, "动效设置（名称、描述、循环）", true);
-            if (!m_ShowSettings) return;
+            var eval = Evaluator;
+            WindowSection.Begin("全局编辑 · 整个动效", "影响整段动效", WindowSection.GlobalAccent);
 
-            using (new EditorGUI.IndentLevelScope())
+            EditorGUI.BeginChangeCheck();
+            string name = EditorGUILayout.TextField("名称", data.name ?? "");
+            EditorGUILayout.LabelField(new GUIContent("描述", "整段动效写给 AI 看的说明"));
+            string description = EditorGUILayout.TextArea(data.description ?? "", GUILayout.MinHeight(36));
+            if (EditorGUI.EndChangeCheck())
             {
-                EditorGUI.BeginChangeCheck();
-                string name = EditorGUILayout.TextField("名称", data.name ?? "");
-                EditorGUILayout.LabelField(new GUIContent("描述", "整段动效写给 AI 看的说明"));
-                string description = EditorGUILayout.TextArea(data.description ?? "", GUILayout.MinHeight(36));
+                RecordUndo("Edit Motion Settings");
+                data.name = name;
+                data.description = description;
+                MarkChanged();
+            }
 
-                bool infinite = data.loop.count < 0;
-                int count = Mathf.Max(1, data.loop.count);
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    using (new EditorGUI.DisabledScope(infinite))
-                        count = Mathf.Max(1, EditorGUILayout.IntField(new GUIContent("播放次数", "1 = 不循环"), count));
-                    infinite = EditorGUILayout.ToggleLeft("无限", infinite, GUILayout.Width(52));
-                }
-                MotionLoopType loopType;
-                using (new EditorGUI.DisabledScope(!infinite && count == 1))
-                    loopType = (MotionLoopType)EditorGUILayout.EnumPopup(new GUIContent("循环方式", "Restart 每次从头播 / Yoyo 来回播"), data.loop.type);
+            WindowSection.SubHeading("循环");
+            EditorGUI.BeginChangeCheck();
+            int scope;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.PrefixLabel(new GUIContent("循环范围", "整段循环：整个动效从头循环。尾段自循环：前面只播一次，之后只循环最后一段路径。"));
+                scope = GUILayout.Toolbar((int)data.loop.scope, s_LoopScopeLabels, EditorStyles.miniButton);
+            }
+            bool tail = scope == (int)MotionLoopScope.LastSegment;
+            bool infinite = data.loop.count < 0;
+            int count = Mathf.Max(1, data.loop.count);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(infinite))
+                    count = Mathf.Max(1, EditorGUILayout.IntField(new GUIContent(tail ? "尾段播放次数" : "播放次数", "1 = 不循环"), count));
+                infinite = EditorGUILayout.ToggleLeft("无限", infinite, GUILayout.Width(52));
+            }
+            MotionLoopType loopType;
+            using (new EditorGUI.DisabledScope(!infinite && count == 1))
+                loopType = (MotionLoopType)EditorGUILayout.EnumPopup(new GUIContent("循环方式", "Restart 每次从头播 / Yoyo 来回播"), data.loop.type);
+            if (EditorGUI.EndChangeCheck())
+            {
+                RecordUndo("Edit Motion Loop");
+                data.loop.scope = (MotionLoopScope)scope;
+                data.loop.count = infinite ? -1 : count;
+                data.loop.type = loopType;
+                MarkChanged();
+            }
+            EditorGUILayout.LabelField(LoopSummary(data, eval), EditorStyles.wordWrappedMiniLabel);
 
-                if (EditorGUI.EndChangeCheck())
-                {
-                    RecordUndo("Edit Motion Settings");
-                    data.name = name;
-                    data.description = description;
-                    data.loop.count = infinite ? -1 : count;
-                    data.loop.type = loopType;
-                    MarkChanged();
-                }
+            WindowSection.SubHeading("终点绑定");
+            DrawEndBinding();
+            WindowSection.End();
+        }
 
-                var eval = Evaluator;
-                EditorGUILayout.LabelField("时长", $"单次 {eval.Duration:0.###}s，路径 {eval.PathDuration:0.###}s" +
-                    (data.loop.count == 1 ? "" : data.loop.count < 0 ? "，无限循环" : $"，共 {data.loop.count} 次 {eval.TotalDuration:0.###}s"));
+        static string LoopSummary(MotionData data, MotionEvaluator eval)
+        {
+            string single = $"单次 {eval.Duration:0.###}s（路径 {eval.PathDuration:0.###}s）";
+            var loop = data.loop;
+            if (loop.count == 1) return single + "，不循环。";
+            string total = loop.count < 0 ? "无限循环" : $"总计 {eval.TotalDuration:0.###}s";
+            if (loop.scope == MotionLoopScope.LastSegment && eval.SegmentCount > 0)
+                return $"{single}。前 {eval.LoopStart:0.###}s 只播一次，之后尾段 {eval.LoopStart:0.###}s → {eval.Duration:0.###}s {LoopCountText(loop.count)}，{total}。";
+            return $"{single}，整段{LoopCountText(loop.count)}，{total}。";
+        }
+
+        void DrawEndBinding()
+        {
+            var binding = EndBinding;
+            EditorGUI.BeginChangeCheck();
+            bool bound = EditorGUILayout.Toggle(new GUIContent("终点绑定",
+                "开启后终点在运行时对准一个对象（由代码传入），当前终点只是设计参考：起点不动，整条路径按进度修正过去。"), binding.bound);
+            string hint = binding.hint ?? "";
+            var kind = binding.kind;
+            // 按改之前的值决定显示哪些行，保持本次事件的控件与 Layout 一致。
+            if (binding.bound)
+            {
+                hint = EditorGUILayout.TextField(new GUIContent("落点说明", "写给人和 AI 看，例如“顶部金币栏图标”"), hint);
+                using (new EditorGUI.DisabledScope(m_EndTarget != null))
+                    kind = (TargetKind)EditorGUILayout.EnumPopup(new GUIContent("落点类型", "RectTransform = UI，Transform = 3D。指定了落点对象时自动判断。"), kind);
+            }
+            if (EditorGUI.EndChangeCheck())
+            {
+                RecordUndo("Edit End Binding");
+                bool toggled = bound != binding.bound;
+                binding.bound = bound;
+                binding.hint = hint;
+                binding.kind = kind;
+                MarkChanged();
+                if (toggled) GUIUtility.ExitGUI();
             }
         }
 
-        void DrawWarnings()
+        // ---------------------------------------------------------------- 提示与警告
+
+        struct Problem
         {
-            var eval = Evaluator;
-            var warnings = new List<string>(eval.Warnings);
+            public MessageType type;
+            public string text;
+            public Problem(MessageType type, string text) { this.type = type; this.text = text; }
+        }
+
+        static GUIStyle s_ProblemStyle;
+        static GUIStyle ProblemStyle => s_ProblemStyle ?? (s_ProblemStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+        {
+            imagePosition = ImagePosition.ImageLeft,
+            richText = false,
+        });
+
+        List<Problem> CollectProblems()
+        {
+            var list = new List<Problem>();
+            var data = m_Asset.data;
+            for (int i = 0; i < data.tracks.Count; i++)
+                if (data.tracks[i] == null)
+                    list.Add(new Problem(MessageType.Error, $"第 {i + 1} 条轨道的类型找不到（脚本被删或改名），可以在时间轴上右键删除它。"));
+            foreach (var warning in Evaluator.Warnings)
+                list.Add(new Problem(MessageType.Warning, warning));
             if (m_Preview)
                 foreach (var name in m_PreviewState.UnsupportedTracks)
-                    warnings.Add($"预览目标上没有轨道 {name} 需要的组件，该轨道不预览");
-            for (int i = 0; i < m_Asset.data.tracks.Count; i++)
-                if (m_Asset.data.tracks[i] == null)
-                    warnings.Add($"第 {i + 1} 条轨道的类型找不到（脚本被删或改名），可以在时间轴右键删除它");
-            if (warnings.Count == 0) return;
-            EditorGUILayout.Space();
-            EditorGUILayout.HelpBox(string.Join("\n", warnings), MessageType.Warning);
+                    list.Add(new Problem(MessageType.Warning, $"预览目标上没有轨道 {name} 需要的组件，该轨道不预览。"));
+            if (IsEndLocked && m_EndSyncFailed)
+                list.Add(new Problem(MessageType.Warning, IsCrossSpace
+                    ? "落点对象换算不到屏幕位置：场景里没有可用的 3D 相机，或落点在相机背后。终点暂时停在上次的位置。"
+                    : "落点对象的位置换算失败（UI 预览目标的父节点不是 RectTransform？）。终点暂时停在上次的位置。"));
+            if (m_EndTarget != null && m_Target != null && m_EndTarget.IsChildOf(m_Target))
+                list.Add(new Problem(MessageType.Warning, "落点对象是预览目标本身或它的子节点，终点不跟随。"));
+            if (EndBinding.bound && m_EndTarget == null)
+                list.Add(new Problem(MessageType.Info, "终点绑定了落点对象（" + (string.IsNullOrEmpty(EndBinding.hint) ? "未写说明" : EndBinding.hint) +
+                    "），但这里没指定。预览按设计时的终点播放；在“落点对象”里指定后，终点会自动对准它。"));
+            AddContextProblems(list);
+            if (data.loop.scope == MotionLoopScope.LastSegment && data.loop.count != 1 && data.points.Count < 2)
+                list.Add(new Problem(MessageType.Info, "设成了尾段自循环，但还没有路径段，暂按整段循环。"));
+            return list;
+        }
+
+        void AddContextProblems(List<Problem> list)
+        {
+            var ctx = EditContext;
+            if (ctx == null) return;
+            var main = ctx.Main;
+            string path = EditContextStore.ContainerPath(main);
+            if (string.IsNullOrEmpty(path))
+            {
+                if (m_Target == null) list.Add(new Problem(MessageType.Info, "上次编辑的场景/预制体已不存在，请重新指定预览目标。"));
+                return;
+            }
+            string where = (main.prefab ? "预制体 " : "场景 ") + Path.GetFileNameWithoutExtension(path);
+            if (!EditContextStore.IsOpen(main))
+            {
+                if (m_Target == null) list.Add(new Problem(MessageType.Info, $"上次在{where}里编辑。点“上次编辑”一行的“打开”回到那里。"));
+                return;
+            }
+            if (!ctx.mover.IsEmpty && m_Target == null)
+                list.Add(new Problem(MessageType.Warning, $"上次的预览目标“{RefName(ctx.mover, main)}”在{where}里没找到（被删除或改名了？），请重新指定。"));
+            if (!ctx.endTarget.IsEmpty && m_EndTarget == null && EditContextStore.IsOpen(ctx.endTarget))
+                list.Add(new Problem(MessageType.Warning, $"上次的落点对象“{RefName(ctx.endTarget, ctx.endTarget)}”没找到（被删除或改名了？），请重新指定。"));
+        }
+
+        static string RefName(MotionObjectRef r, MotionObjectRef container)
+        {
+            string name = r.Name;
+            return string.IsNullOrEmpty(name) ? Path.GetFileNameWithoutExtension(EditContextStore.ContainerPath(container)) : name;
+        }
+
+        /// <summary>提示与警告单独一块，固定在窗口下方，不跟着上面的内容滚走。</summary>
+        void DrawProblems()
+        {
+            var problems = CollectProblems();
+            int errors = 0, warnings = 0;
+            foreach (var p in problems)
+            {
+                if (p.type == MessageType.Error) errors++;
+                else if (p.type == MessageType.Warning) warnings++;
+            }
+            int infos = problems.Count - errors - warnings;
+            var accent = errors > 0 ? WindowSection.ErrorAccent : warnings > 0 ? WindowSection.WarningAccent : WindowSection.OkAccent;
+            string subtitle = problems.Count == 0 ? "一切正常" : $"错误 {errors} · 警告 {warnings} · 提示 {infos}";
+
+            WindowSection.Begin("提示与警告", subtitle, accent);
+            if (problems.Count == 0)
+            {
+                EditorGUILayout.LabelField("没有错误或警告。", EditorStyles.miniLabel);
+            }
+            else
+            {
+                bool scroll = problems.Count > 3;
+                if (scroll) m_ProblemScroll = EditorGUILayout.BeginScrollView(m_ProblemScroll, GUILayout.Height(76f));
+                foreach (var p in problems)
+                    GUILayout.Label(new GUIContent(" " + p.text, ProblemIcon(p.type)), ProblemStyle);
+                if (scroll) EditorGUILayout.EndScrollView();
+            }
+            WindowSection.End();
+        }
+
+        static Texture ProblemIcon(MessageType type)
+        {
+            string name = type == MessageType.Error ? "console.erroricon.sml" : type == MessageType.Warning ? "console.warnicon.sml" : "console.infoicon.sml";
+            return EditorGUIUtility.IconContent(name).image;
         }
 
         void DrawFooter()
         {
-            EditorGUILayout.Space();
+            WindowSection.Begin("导出", "JSON 给 AI 或其他工具读", WindowSection.ExportAccent);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("复制 JSON"))
@@ -1085,6 +1572,7 @@ namespace Limbo.CurveMotion.Editor
                 if (GUILayout.Button("导出 JSON…")) ExportJson();
                 if (GUILayout.Button("导入 JSON…")) ImportJson();
             }
+            WindowSection.End();
         }
 
         // ---------------------------------------------------------------- 资产与 JSON
@@ -1107,6 +1595,7 @@ namespace Limbo.CurveMotion.Editor
             AssetDatabase.CreateAsset(asset, path);
             AssetDatabase.SaveAssets();
             SetAsset(asset);
+            SaveMover();
             EditorGUIUtility.PingObject(asset);
         }
 

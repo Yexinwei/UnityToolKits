@@ -62,6 +62,9 @@ namespace UnityEngine
     public sealed class SerializeReference : Attribute { }
 
     [AttributeUsage(AttributeTargets.Field)]
+    public sealed class HideInInspector : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Field)]
     public sealed class SerializeField : Attribute { }
 
     [AttributeUsage(AttributeTargets.Field)]

@@ -256,6 +256,21 @@ namespace Limbo.CurveMotion
             return new MotionEvent { anchor = e.anchor, offset = e.offset, name = e.name, message = e.message };
         }
 
+        /// <summary>
+        /// 把终点放到相对起点 offset 的位置（终点跟随落点对象时用）。变化小于 epsilon 时不改，返回是否改了。
+        /// </summary>
+        public static bool SetEndOffset(MotionData data, Vector3 offset, float epsilon = 1e-4f)
+        {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+            var points = data.points;
+            if (points.Count < 2) return false;
+            var position = points[0].position + offset;
+            var end = points[points.Count - 1];
+            if ((end.position - position).sqrMagnitude <= epsilon * epsilon) return false;
+            end.position = position;
+            return true;
+        }
+
         const float TimeEpsilon = 1e-4f;
 
         public static SegmentSettings Clone(SegmentSettings s)
