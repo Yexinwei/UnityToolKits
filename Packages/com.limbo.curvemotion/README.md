@@ -33,7 +33,7 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
    - 属性轨道：“+ 添加属性轨道”选择缩放、旋转、透明度、颜色等；双击空白处加片段，拖动片段移动，拖两端改时长。同一轨道后面的片段会覆盖前面的，被覆盖的部分显示为半透明。选中轨道可改它的设置，例如透明度的“作用组件”：自动（有 CanvasGroup 用 CanvasGroup，否则 Graphic，再否则 SpriteRenderer）、CanvasGroup（连同子节点一起淡）、Graphic（只改这一张 Image / Text）、SpriteRenderer。预览和导出代码都按这个设置走。
    - 拖动时吸附到路径点、事件、其他片段边界和播放头，按住 Ctrl/⌘ 临时关闭。右键有插入、复制、删除等操作。
 5. 时间轴下方分两块：
-   - **单段编辑**（黄色）：只改选中的那一项。路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、日志内容、锚点、偏移）。
+   - **单段编辑**（黄色）：只改选中的那一项。路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、特效说明、锚点、偏移）。
    - **全局编辑**（蓝色）：作用于整个动效。名称、描述、循环、终点绑定。循环范围可选“整段循环”或“尾段自循环”（前面只播一次，之后只循环最后一段路径，例如飞到位后原地浮动），时间轴上会标出循环的那一截。
    - 窗口最下方是**提示与警告**，按错误 / 警告 / 提示分类列出。
 6. 快捷键（窗口有焦点时）：空格播放/暂停，Delete 删除选中项，Ctrl/⌘+D 复制一份，Ctrl/⌘+C / V 复制粘贴片段或事件（粘贴到播放头处）。
@@ -78,12 +78,12 @@ var seq = DemoCoinFlyMotion.Play(coinRectTransform);
 // 终点绑定的动效多两个参数：落点对象（可以是 UI 或 3D 物体）和 UI/3D 换算用的相机（默认 Camera.main）
 DemoCoinFlyMotion.Play(coinRectTransform, walletIcon, Camera.main);
 
-// 有事件的动效可传回调（参数是事件名），不传时打印日志
-DemoCoinFlyMotion.Play(coin, onEvent: name => { if (name == "OnArrive") AddCoins(); });
+// 有事件的动效：事件要做的事写在导出时一起生成的 DemoCoinFlyMotion.Events.cs 里（见下）
 
 // 停止：target.DOKill() 或 seq.Kill()；对象销毁时自动停止
 ```
 
+- **事件**：每个事件名对应一个方法 `static void OnXxx(Transform target)`（如事件 `coin land` → `OnCoinLand`），导出时生成在旁边的 `类名.Events.cs` 里，开发只需填方法体（播特效、音效、加分……）。方法注释写着触发时间和特效师填的“特效说明”；没接入前方法里是一条橙色加粗的 `Debug.LogWarning`（带特效说明，点日志能定位到对象），接入后删掉即可。这个文件只在第一次导出时生成，之后重新导出只追加新事件的方法，不覆盖已写的代码；事件改名或删除留下的旧方法不会报错，导出时会提示。导出类是 `partial` 的，事件文件要和它在同一个程序集、同一个命名空间。“复制 DOTween 代码”时事件方法直接接在代码后面。`Play` 仍有可选的 `onEvent` 参数（参数是事件名），需要在外部额外监听时用。
 - 只依赖 UnityEngine 和 DOTween（UI 的透明度、颜色另需 UGUI）。DOTween 放在 Assets 里（默认的 Plugins/Demigiant）时直接可用；导出到带 asmdef 的目录时，asmdef 要引用 DOTween。
 - 播放结果与编辑器预览一致：路径每段一个 `DOVirtual.Float`，位置用与预览相同的贝塞尔 + 弧长算法；属性片段用 `DOScale` / `DOTween.To` 插入 Sequence，被同轨道后一个片段覆盖的部分截掉；循环、尾段自循环、事件、终点绑定都照预览的规则生成。
 - 无限的尾段自循环由两个 Sequence 组成，返回的是前半段（播完不自动销毁），Kill 它时循环部分一起停。

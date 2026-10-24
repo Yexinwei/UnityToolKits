@@ -57,8 +57,9 @@ namespace Limbo.CurveMotion.Editor
 
         public static string ClassName(MotionData data) => CSharpLiterals.ClassName(data.name);
 
+        // 复制时事件处理方法接在后面，一份文本就能编译。
         static string Generate(MotionData data, List<string> warnings) =>
-            DotweenExporter.Generate(data, new DotweenExportOptions { Namespace = Namespace.Trim() }, warnings);
+            DotweenExporter.GenerateWithEventStubs(data, new DotweenExportOptions { Namespace = Namespace.Trim() }, warnings);
 
         public static void Copy(EditorWindow window, MotionData data)
         {
@@ -93,16 +94,53 @@ namespace Limbo.CurveMotion.Editor
             File.WriteAllText(path, code);
             EditorPrefs.SetString(FolderKey, Path.GetDirectoryName(path));
             string ns = Namespace.Trim();
+            string eventsPath = data.events.Count > 0 ? WriteEventStubs(data, path, className ?? ClassName(data), ns, warnings) : null;
             EditorPrefs.SetString(ExportedClassKey + data.name, (ns.Length > 0 ? ns + "." : "") + (className ?? ClassName(data)));
 
             string assetPath = ToAssetPath(path);
             if (assetPath != null)
             {
+                string eventsAssetPath = eventsPath != null ? ToAssetPath(eventsPath) : null;
+                if (eventsAssetPath != null) AssetDatabase.ImportAsset(eventsAssetPath);
                 AssetDatabase.ImportAsset(assetPath);
                 EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<MonoScript>(assetPath));
             }
             window.ShowNotification(new GUIContent(warnings.Count > 0 ? $"已导出，有 {warnings.Count} 条警告" : "已导出 " + Path.GetFileName(path)));
             Report(warnings);
+        }
+
+        /// <summary>
+        /// 导出文件旁边的事件处理文件（Foo.cs → Foo.Events.cs）：没有就整份生成，有就只追加新事件的方法，已写的代码不动。
+        /// 返回文件路径。
+        /// </summary>
+        static string WriteEventStubs(MotionData data, string exportPath, string className, string ns, List<string> warnings)
+        {
+            string path = Path.Combine(Path.GetDirectoryName(exportPath), EventStubs.FileName(Path.GetFileNameWithoutExtension(exportPath)));
+            if (!File.Exists(path))
+            {
+                File.WriteAllText(path, EventStubs.Generate(data, className, ns));
+                return path;
+            }
+
+            string existing = File.ReadAllText(path);
+            string file = Path.GetFileName(path);
+            bool hasNs = existing.Contains("namespace ");
+            if (hasNs != ns.Length > 0 || ns.Length > 0 && !existing.Contains("namespace " + ns))
+                warnings.Add($"{file} 的命名空间和这次导出的不一样，partial 类对不上会编译报错，请手动改成 {(ns.Length > 0 ? ns : "全局命名空间")}");
+            var merge = EventStubs.Merge(existing, data, className, ns);
+            if (merge.added.Count > 0)
+            {
+                if (merge.code == existing)
+                    warnings.Add($"{file} 里找不到类的结尾，没能追加 {string.Join("、", merge.added)}，请手动补上（否则编译报错）");
+                else
+                {
+                    File.WriteAllText(path, merge.code);
+                    Debug.Log($"[Curve Motion] {file} 追加了新事件的方法：{string.Join("、", merge.added)}");
+                }
+            }
+            if (merge.unused.Count > 0)
+                warnings.Add($"{file} 里的 {string.Join("、", merge.unused)} 已没有对应的事件（改名或删除了），里面写的代码要挪到新方法里，或者删掉");
+            return path;
         }
 
         /// <summary>

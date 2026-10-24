@@ -21,7 +21,7 @@ namespace Limbo.CurveMotion.Editor.Export
     /// <list type="bullet">
     /// <item>路径：每段一个 DOVirtual.Float，按段时长和缓动驱动段内弧长比例，位置用与预览相同的贝塞尔 + 弧长表计算；</item>
     /// <item>属性片段：Sequence.Insert 到片段开始时间，从当前值补间到目标值；被后一个片段覆盖的部分截掉，缓动按原时长计算；</item>
-    /// <item>事件：InsertCallback，默认打印日志，可传入回调；</item>
+    /// <item>事件：InsertCallback 调用同名的 OnXxx(target)，方法写在 partial 类的事件处理文件里（见 <see cref="EventStubs"/>）；</item>
     /// <item>循环：整段循环用 SetLoops；尾段循环把最后一段（及同时间的片段、事件）放进单独循环的子 Sequence；</item>
     /// <item>终点绑定：Play 多一个落点参数，起点不动，整条路径按弧长进度修正到落点（UI 与 3D 之间经屏幕坐标换算）。</item>
     /// </list>
@@ -57,6 +57,30 @@ namespace Limbo.CurveMotion.Editor.Export
             public string statement;
         }
 
+        /// <summary>导出用的类名：选项里给了用选项的，否则由动效名生成；不合法时用 CurveMotion。</summary>
+        public static string ResolveClassName(MotionData data, DotweenExportOptions options, List<string> warnings = null)
+        {
+            string className = options != null && !string.IsNullOrWhiteSpace(options.ClassName) ? options.ClassName.Trim() : L.ClassName(data.name);
+            if (L.IsIdentifier(className)) return className;
+            warnings?.Add($"类名 {className} 不是合法的 C# 标识符，已改用 CurveMotion");
+            return "CurveMotion";
+        }
+
+        /// <summary>
+        /// 导出代码后面接上整份事件处理方法（没有事件时就是 <see cref="Generate"/> 的结果），一份文本就能编译。
+        /// 用于“复制代码”；导出到文件时事件处理单独放一个文件，见 <see cref="EventStubs"/>。
+        /// </summary>
+        public static string GenerateWithEventStubs(MotionData data, DotweenExportOptions options = null, List<string> warnings = null)
+        {
+            options ??= new DotweenExportOptions();
+            string code = Generate(data, options, warnings);
+            if (data.events.Count == 0) return code;
+            string className = ResolveClassName(data, options);
+            return code + "\n// ---------------------------------------------------------------- 事件处理（导出到文件时单独放在 "
+                + EventStubs.FileName(className) + "）\n"
+                +EventStubs.Generate(data, className, options.Namespace, false);
+        }
+
         public static string Generate(MotionData data, DotweenExportOptions options = null, List<string> warnings = null)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
@@ -70,12 +94,7 @@ namespace Limbo.CurveMotion.Editor.Export
             ctx.Using("DG.Tweening");
             ctx.Using("UnityEngine");
 
-            string className = !string.IsNullOrWhiteSpace(options.ClassName) ? options.ClassName.Trim() : L.ClassName(data.name);
-            if (!L.IsIdentifier(className))
-            {
-                warnings.Add($"类名 {className} 不是合法的 C# 标识符，已改用 CurveMotion");
-                className = "CurveMotion";
-            }
+            string className = ResolveClassName(data, options, warnings);
 
             int segments = eval.SegmentCount;
             var end = data.endTarget ?? new EndTarget();
@@ -175,7 +194,6 @@ namespace Limbo.CurveMotion.Editor.Export
             }
 
             // ---- 事件
-            if (data.events.Count > 0) ctx.Helper("fire", FireHelper);
             for (int i = 0; i < data.events.Count; i++)
             {
                 var e = data.events[i];
@@ -186,7 +204,8 @@ namespace Limbo.CurveMotion.Editor.Export
                     sequence = w.sequence,
                     time = time - w.start,
                     comment = "事件：" + MotionDescriber.Event(data, eval, i),
-                    statement = Callback + "() => Fire(onEvent, " + L.String(string.IsNullOrEmpty(e.name) ? "Event" : e.name) + ", " + L.String(e.message ?? "") + ")",
+                    statement = Callback + "() => { " + EventStubs.MethodName(e.name) + "(" + ctx.Target + "); onEvent?.Invoke("
+                        + L.String(string.IsNullOrEmpty(e.name) ? "Event" : e.name) + "); }",
                 });
             }
 
@@ -211,10 +230,10 @@ namespace Limbo.CurveMotion.Editor.Export
 
             var cls = new StringBuilder();
             WriteClassDoc(cls, data, eval, className, ui, bound);
-            cls.Append("public static class ").Append(className).Append("\n{\n");
+            cls.Append(data.events.Count > 0 ? "public static partial class " : "public static class ").Append(className).Append("\n{\n");
             cls.Append("    /// <summary>单次播放时长（秒），不含循环。</summary>\n");
             cls.Append("    public const float Duration = ").Append(L.Float(eval.Duration)).Append(";\n\n");
-            WritePlaySignature(cls, data, ui, bound, tailLoop && loopCount < 0);
+            WritePlaySignature(cls, data, className, ui, bound, tailLoop && loopCount < 0);
             cls.Append("    {\n");
             foreach (var decl in ctx.Declarations) cls.Append("        ").Append(decl).Append('\n');
             cls.Append(body);
@@ -368,7 +387,7 @@ namespace Limbo.CurveMotion.Editor.Export
             sb.Append("/// </summary>\n");
         }
 
-        static void WritePlaySignature(StringBuilder sb, MotionData data, bool ui, bool bound, bool infiniteTail)
+        static void WritePlaySignature(StringBuilder sb, MotionData data, string className, bool ui, bool bound, bool infiniteTail)
         {
             var end = data.endTarget;
             sb.Append("    /// <summary>\n");
@@ -376,6 +395,8 @@ namespace Limbo.CurveMotion.Editor.Export
             sb.Append("    /// 返回的 Sequence 已开始播放；停止用 target.DOKill() 或 Kill 返回值，对象销毁时自动停止。\n");
             if (bound)
                 sb.Append("    /// 路径走完后落点对象再移动，不会再跟随。\n");
+            if (data.events.Count > 0)
+                sb.Append("    /// 事件触发时调用同名的 OnXxx(target)，要做的事写在 ").Append(EventStubs.FileName(className)).Append(" 里。\n");
             if (infiniteTail)
                 sb.Append("    /// 尾段无限循环：返回的 Sequence 只含循环之前的部分，播完后不自动销毁，Kill 它时循环部分一起停。\n");
             sb.Append("    /// </summary>\n");
@@ -387,7 +408,7 @@ namespace Limbo.CurveMotion.Editor.Export
                 sb.Append("    /// <param name=\"worldCamera\">UI 与 3D 之间换算屏幕位置用的相机，为空时用 Camera.main。</param>\n");
             }
             if (data.events.Count > 0)
-                sb.Append("    /// <param name=\"onEvent\">事件回调，参数是事件名；为空时打印日志。</param>\n");
+                sb.Append("    /// <param name=\"onEvent\">可选，事件触发时额外通知一次，参数是事件名。</param>\n");
 
             sb.Append("    public static Sequence Play(").Append(ui ? "RectTransform" : "Transform").Append(" target");
             if (bound) sb.Append(", Transform endTarget = null, Camera worldCamera = null");
@@ -725,13 +746,6 @@ namespace Limbo.CurveMotion.Editor.Export
         if (p.z <= 0f) return false;
         screen = p;
         return true;
-    }";
-
-        const string FireHelper = @"    // ---------------------------------------------------------------- 事件
-    static void Fire(Action<string> onEvent, string name, string message)
-    {
-        if (onEvent != null) onEvent(name);
-        else Debug.Log(string.IsNullOrEmpty(message) ? ""[Curve Motion] "" + name : ""[Curve Motion] "" + name + "": "" + message);
     }";
 
         const string PartEaseHelper = @"    /// <summary>片段被截断或从中间开始时用：按片段的完整时长求缓动值，offset 是这一截在片段里的开始时间。</summary>

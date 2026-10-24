@@ -191,8 +191,50 @@ namespace Limbo.CurveMotion.Tests
             data.events.Add(new MotionEvent { anchor = "p1", name = "OnArrive", message = "到了\"钱包\"" });
             var code = Generate(data);
             StringAssert.Contains("public static Sequence Play(RectTransform target, Action<string> onEvent = null)", code);
-            StringAssert.Contains("seq.InsertCallback(1f, () => Fire(onEvent, \"OnArrive\", \"到了\\\"钱包\\\"\"));", code);
+            StringAssert.Contains("seq.InsertCallback(1f, () => { OnArrive(target); onEvent?.Invoke(\"OnArrive\"); });", code);
+            StringAssert.Contains("public static partial class", code);
             StringAssert.Contains("using System;", code);
+        }
+
+        [TestCase("coin land", "OnCoinLand")]
+        [TestCase("OnArrive", "OnArrive")]
+        [TestCase("once", "OnOnce")]
+        [TestCase("", "OnEvent")]
+        [TestCase("2nd hit", "On2ndHit")]
+        [TestCase("落地", "On落地")]
+        public void Events_MethodName(string eventName, string expected)
+        {
+            Assert.AreEqual(expected, EventStubs.MethodName(eventName));
+        }
+
+        [Test]
+        public void EventStubs_GenerateAndMerge()
+        {
+            var data = Line(TargetKind.RectTransform, 1f);
+            data.events.Add(new MotionEvent { anchor = "p1", name = "land", message = "播放 FX_CoinBurst" });
+            data.events.Add(new MotionEvent { anchor = "p0", name = "land" });
+            string stubs = EventStubs.Generate(data, "CoinFly", "Game.Fx");
+            StringAssert.Contains("public static partial class CoinFly", stubs);
+            StringAssert.Contains("static void OnLand(Transform target)", stubs);
+            StringAssert.Contains("/// 特效说明：播放 FX_CoinBurst", stubs);
+            StringAssert.Contains("Debug.LogWarning(\"<color=#FF8C00><b>【动效事件未接入】</b></color> CoinFly · land（1s）\\n特效说明：播放 FX_CoinBurst\\n在 CoinFly.Events.cs 的 OnLand 里实现\", target);", stubs);
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(stubs, "static void OnLand").Count);
+
+            // 用户改过方法体；之后加了新事件、删了旧事件。
+            string edited = stubs.Replace("// TODO 在这里写事件要做的事，写好后删掉下面这行提示。", "PlayFx(); // mine");
+            data.events.Clear();
+            data.events.Add(new MotionEvent { anchor = "p1", name = "bounce" });
+            var merged = EventStubs.Merge(edited, data, "CoinFly", "Game.Fx");
+            CollectionAssert.AreEqual(new[] { "OnBounce" }, merged.added);
+            CollectionAssert.AreEqual(new[] { "OnLand" }, merged.unused);
+            StringAssert.Contains("PlayFx(); // mine", merged.code);
+            StringAssert.Contains("static void OnBounce(Transform target)", merged.code);
+            Assert.Less(merged.code.IndexOf("OnBounce"), merged.code.LastIndexOf("    }\n}"));
+            Assert.IsTrue(merged.code.TrimEnd().EndsWith("    }\n}"));
+
+            var again = EventStubs.Merge(merged.code, data, "CoinFly", "Game.Fx");
+            Assert.AreEqual(merged.code, again.code);
+            Assert.AreEqual(0, again.added.Count);
         }
 
         [TestCase(3, MotionLoopType.Restart, "seq.SetLoops(3, LoopType.Restart);")]

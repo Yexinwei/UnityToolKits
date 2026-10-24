@@ -1411,11 +1411,10 @@ namespace Limbo.CurveMotion.Editor
             float time = eval.GetEventTime(m_SelEvent);
 
             WindowSection.SubHeading($"事件（{time:0.###}s）");
-            EditorGUILayout.LabelField("导出时先生成一条日志占位，接入正式项目后替换成实际回调。", EditorStyles.wordWrappedMiniLabel);
-
             EditorGUI.BeginChangeCheck();
             string name = EditorGUILayout.TextField("名称", motionEvent.name ?? "");
-            string message = EditorGUILayout.TextField(new GUIContent("日志内容", "占位日志里输出的文字"), motionEvent.message ?? "");
+            EditorGUILayout.LabelField("生成方法", Export.EventStubs.MethodName(name) + "(Transform target)", EditorStyles.miniLabel);
+            string message = EventMessageField(motionEvent.message ?? "");
             string anchor = AnchorPopup(motionEvent.anchor, data, eval);
             float offset = EditorGUILayout.FloatField(new GUIContent("偏移（秒）", "触发时间 = 锚点到达时间 + 偏移"), motionEvent.offset);
             if (EditorGUI.EndChangeCheck())
@@ -1434,6 +1433,34 @@ namespace Limbo.CurveMotion.Editor
                 if (GUILayout.Button("复制一份")) { DuplicateEvent(m_SelEvent); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("删除事件")) { DeleteEvent(m_SelEvent); GUIUtility.ExitGUI(); }
             }
+        }
+
+        static GUIStyle s_MessageArea;
+
+        /// <summary>
+        /// 特效说明：特效师写给开发的话（播什么特效、音效、要什么效果）。导出时写进 OnXxx 方法的注释，
+        /// 开发没接入前每次触发都会打一条醒目的警告日志带上这段话，所以做得比普通字段显眼。
+        /// </summary>
+        static string EventMessageField(string message)
+        {
+            s_MessageArea ??= new GUIStyle(EditorStyles.textArea) { wordWrap = true };
+            GUILayout.Space(4f);
+            var box = EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            if (Event.current.type == EventType.Repaint)
+            {
+                var accent = WindowSection.WarningAccent;
+                EditorGUI.DrawRect(box, new Color(accent.r, accent.g, accent.b, EditorGUIUtility.isProSkin ? 0.12f : 0.18f));
+                EditorGUI.DrawRect(new Rect(box.x, box.y, 4f, box.height), accent);
+            }
+            EditorGUILayout.LabelField("特效说明（写给开发）", EditorStyles.boldLabel);
+            message = EditorGUILayout.TextArea(message, s_MessageArea, GUILayout.MinHeight(48f));
+            EditorGUILayout.LabelField(string.IsNullOrEmpty(message)
+                    ? "建议写清楚这里要播的特效、音效或要做的事。"
+                    : "导出后写进事件方法的注释；开发接入前，每次触发都会在 Console 打一条橙色警告带上这段话。",
+                EditorStyles.wordWrappedMiniLabel);
+            EditorGUILayout.EndVertical();
+            GUILayout.Space(2f);
+            return message;
         }
 
         /// <summary>锚点下拉框。改锚点时调用方负责换算偏移，保持绝对时间不变。</summary>
