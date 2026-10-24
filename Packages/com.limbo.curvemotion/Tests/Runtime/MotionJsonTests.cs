@@ -141,6 +141,38 @@ namespace Limbo.CurveMotion.Tests
         }
 
         [Test]
+        public void TrackSettings_RoundTrip()
+        {
+            var data = TestData.Line(0.5f);
+            var alpha = new AlphaTrack { source = AlphaSource.Graphic };
+            alpha.AddClip("p0", 0f, 0.2f).value = new Vector4(0f, 0f, 0f, 0f);
+            data.tracks.Add(alpha);
+            data.tracks.Add(new ScaleTrack());
+            string json = MotionJson.ToJson(data);
+            StringAssert.Contains("\"source\": \"Graphic\"", json);
+            StringAssert.Contains("Graphic 透明度变为 0（完全透明）", json, "描述里写明作用组件");
+            Assert.AreEqual(1, json.Split(new[] { "\"settings\": {" }, StringSplitOptions.None).Length - 1, "没有设置的轨道不写 settings");
+
+            var back = MotionJson.FromJson(json);
+            Assert.AreEqual(AlphaSource.Graphic, ((AlphaTrack)back.tracks[0]).source);
+        }
+
+        [Test]
+        public void TrackSettings_MissingOrUnknown_UseDefault()
+        {
+            const string old = "{\"schemaVersion\":1,\"tracks\":[{\"type\":\"alpha\",\"clips\":[]}]}";
+            Assert.AreEqual(AlphaSource.Auto, ((AlphaTrack)MotionJson.FromJson(old).tracks[0]).source, "旧 JSON 没有 settings");
+
+            const string bad = "{\"schemaVersion\":1,\"tracks\":[{\"type\":\"alpha\",\"settings\":{\"source\":\"Mesh\"},\"clips\":[]}]}";
+            var warnings = new List<string>();
+            Assert.AreEqual(AlphaSource.Auto, ((AlphaTrack)MotionJson.FromJson(bad, warnings).tracks[0]).source);
+            Assert.AreEqual(1, warnings.Count);
+
+            const string lower = "{\"schemaVersion\":1,\"tracks\":[{\"type\":\"alpha\",\"settings\":{\"source\":\"canvasgroup\"},\"clips\":[]}]}";
+            Assert.AreEqual(AlphaSource.CanvasGroup, ((AlphaTrack)MotionJson.FromJson(lower).tracks[0]).source, "不区分大小写");
+        }
+
+        [Test]
         public void NewerSchemaVersion_Throws()
         {
             Assert.Throws<FormatException>(() => MotionJson.FromJson("{\"schemaVersion\":999}"));

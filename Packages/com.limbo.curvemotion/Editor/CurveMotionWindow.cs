@@ -24,6 +24,7 @@ namespace Limbo.CurveMotion.Editor
         [SerializeField] Transform m_EndTarget;
         [SerializeField] Camera m_WorldCamera;
         [SerializeField] bool m_EditPath = true;
+        // 预览开关：开着时 Scene 视图显示路径，并把动效作用在预览目标上；关掉隐藏路径、对象还原。
         [SerializeField] bool m_Preview;
         [SerializeField] bool m_LoopPreview;
         [SerializeField] float m_Time;
@@ -98,6 +99,18 @@ namespace Limbo.CurveMotion.Editor
         /// <summary>预览目标与落点对象一个是 UI、一个是 3D，终点按屏幕位置对准。</summary>
         internal bool IsCrossSpace => MixedSpace.IsCrossSpace(m_Target, m_EndTarget);
 
+        /// <summary>
+        /// 预览目标在当前打开的场景/预制体里，才能预览、在 Scene 视图显示路径。
+        /// 例如目标在场景里、却进了某个预制体，这时路径画在预制体模式里没有意义。
+        /// </summary>
+        bool CanPreview => m_Asset != null && m_Target != null && InCurrentStage(m_Target);
+
+        static bool InCurrentStage(Transform target) =>
+            StageUtility.GetStageHandle(target.gameObject) == StageUtility.GetCurrentStageHandle();
+
+        /// <summary>Scene 视图里画不画路径：预览中，或 Play 模式里正在试播导出代码。</summary>
+        bool ShowPathInScene => CanPreview && (m_PreviewState.IsActive || DotweenExportActions.TryGetRunStart(m_Target, out _));
+
         internal EndTarget EndBinding => m_Asset.data.endTarget ?? (m_Asset.data.endTarget = new EndTarget());
 
         internal MotionEvaluator Evaluator
@@ -120,9 +133,14 @@ namespace Limbo.CurveMotion.Editor
             {
                 var points = m_Asset != null ? m_Asset.data.points : null;
                 var origin = points != null && points.Count > 0 ? points[0].position : Vector3.zero;
-                return m_PreviewState.GetPathMatrix(m_Target) * Matrix4x4.Translate(-origin);
+                return m_Target == null ? Matrix4x4.identity : MotionPreview.GetPathMatrix(m_Target, StartLocalPosition) * Matrix4x4.Translate(-origin);
             }
         }
+
+        /// <summary>预览目标的起始 localPosition：预览或 Play 模式试播中是开始时记下的值，否则是当前值。</summary>
+        Vector3 StartLocalPosition => DotweenExportActions.TryGetRunStart(m_Target, out var runStart)
+            ? runStart
+            : m_PreviewState.GetStartLocalPosition(m_Target);
 
         /// <summary>选中片段时，返回它在单次播放中的生效时间段，Scene 视图据此高亮对应的路径。</summary>
         internal bool TryGetSelectedClipSpan(out float start, out float end, out Color color)
@@ -211,12 +229,12 @@ namespace Limbo.CurveMotion.Editor
             if (m_Preview && m_Asset != null) m_PreviewState.CaptureTracks(m_Asset.data);
         }
 
-        /// <summary>拖动时间轴标尺：定位播放头，有预览目标时自动进入预览。</summary>
+        /// <summary>拖动时间轴标尺：定位播放头，能预览时自动打开预览。</summary>
         internal void Scrub(float time)
         {
             m_Time = time;
             m_Playing = false;
-            if (!m_Preview && m_Target != null) StartPreview();
+            if (!m_Preview) StartPreview();
             ApplyPreview();
             Repaint();
             SceneView.RepaintAll();
@@ -437,24 +455,25 @@ namespace Limbo.CurveMotion.Editor
             Undo.undoRedoPerformed += OnUndoRedo;
             EditorApplication.update += OnEditorUpdate;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
-            AssemblyReloadEvents.beforeAssemblyReload += StopPreview;
+            AssemblyReloadEvents.beforeAssemblyReload += SuspendPreview;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EditorSceneManager.sceneSaving += OnSceneSaving;
             PrefabStage.prefabSaving += OnPrefabSaving;
             PrefabStage.prefabStageClosing += OnPrefabStageClosing;
-            // 域重载后预览状态已丢失，避免把中途的变换当成初始值。
-            m_Preview = false;
+            // 域重载前已经还原了对象（SuspendPreview），预览开关保留，SyncPreviewState 在下一帧重新开始预览。
             m_Playing = false;
         }
 
         void OnDisable()
         {
-            StopPreview();
+            // 域重载也会走这里：只还原对象，不关预览开关，重载后接着预览。
+            m_Playing = false;
+            SuspendPreview();
             SceneView.duringSceneGui -= OnSceneGUI;
             Undo.undoRedoPerformed -= OnUndoRedo;
             EditorApplication.update -= OnEditorUpdate;
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
-            AssemblyReloadEvents.beforeAssemblyReload -= StopPreview;
+            AssemblyReloadEvents.beforeAssemblyReload -= SuspendPreview;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
             EditorSceneManager.sceneSaving -= OnSceneSaving;
             PrefabStage.prefabSaving -= OnPrefabSaving;
@@ -463,7 +482,7 @@ namespace Limbo.CurveMotion.Editor
 
         void OnSceneGUI(SceneView view)
         {
-            if (m_Asset == null) return;
+            if (m_Asset == null || !ShowPathInScene) return;
             PathSceneEditor.Draw(this);
         }
 
@@ -484,13 +503,13 @@ namespace Limbo.CurveMotion.Editor
             if (change == PlayModeStateChange.ExitingEditMode) StopPreview();
         }
 
-        // 保存场景前还原对象，避免把预览中的位置、缩放等存进场景。
-        void OnSceneSaving(UnityEngine.SceneManagement.Scene scene, string path) => StopPreview();
+        // 保存场景前还原对象，避免把预览中的位置、缩放等存进场景。预览开关不动，下一帧接着预览。
+        void OnSceneSaving(UnityEngine.SceneManagement.Scene scene, string path) => SuspendPreview();
 
         // 预制体模式里同理；退出预制体模式时预览目标会被销毁，先还原。
         void OnPrefabSaving(GameObject root)
         {
-            if (m_PreviewState.IsActive && root != null && m_PreviewState.Target.IsChildOf(root.transform)) StopPreview();
+            if (m_PreviewState.IsActive && root != null && m_PreviewState.Target.IsChildOf(root.transform)) SuspendPreview();
         }
 
         void OnPrefabStageClosing(PrefabStage stage)
@@ -500,6 +519,7 @@ namespace Limbo.CurveMotion.Editor
 
         void OnEditorUpdate()
         {
+            SyncPreviewState();
             SyncEndToTarget();
             if (!m_Playing || m_Asset == null) return;
             double now = EditorApplication.timeSinceStartup;
@@ -733,7 +753,7 @@ namespace Limbo.CurveMotion.Editor
                 m_EndSyncFailed = false;
                 return;
             }
-            var startLocal = m_PreviewState.GetStartLocalPosition(m_Target);
+            var startLocal = StartLocalPosition;
             var camera = MixedSpace.ResolveWorldCamera(m_WorldCamera);
             bool ok = MixedSpace.TryGetEndOffset(m_Target, startLocal, m_EndTarget, camera, out var offset);
             if (ok != !m_EndSyncFailed)
@@ -752,7 +772,8 @@ namespace Limbo.CurveMotion.Editor
 
         void StartPreview()
         {
-            if (m_Target == null || m_Asset == null) return;
+            if (!CanPreview) return;
+            DotweenExportActions.StopRun();
             m_PreviewState.Begin(m_Target, m_Asset.data);
             m_Preview = true;
             SaveMover();
@@ -766,11 +787,46 @@ namespace Limbo.CurveMotion.Editor
             m_Preview = false;
             m_PreviewState.End();
             if (wasActive) RepaintGameView();
+            SceneView.RepaintAll();
+        }
+
+        /// <summary>只还原对象、不关预览开关（保存前用），<see cref="SyncPreviewState"/> 下一帧接着预览。</summary>
+        void SuspendPreview()
+        {
+            if (!m_PreviewState.IsActive) return;
+            m_PreviewState.End();
+            RepaintGameView();
+        }
+
+        /// <summary>
+        /// 让对象上的预览跟着开关和“能不能预览”走：进了别的场景/预制体先还原对象、暂停播放，
+        /// 回来后（或保存完）在当前播放头位置接着预览。
+        /// </summary>
+        void SyncPreviewState()
+        {
+            bool want = m_Preview && CanPreview;
+            bool changed = false;
+            if (m_PreviewState.IsActive && (!want || m_PreviewState.Target != m_Target))
+            {
+                m_Playing = false;
+                m_PreviewState.End();
+                RepaintGameView();
+                changed = true;
+            }
+            if (want && !m_PreviewState.IsActive)
+            {
+                m_PreviewState.Begin(m_Target, m_Asset.data);
+                ApplyPreview();
+                changed = true;
+            }
+            if (!changed) return;
+            Repaint();
+            SceneView.RepaintAll();
         }
 
         void TogglePlay()
         {
-            if (m_Target == null) return;
+            if (!CanPreview) return;
             if (m_Playing)
             {
                 m_Playing = false;
@@ -918,7 +974,7 @@ namespace Limbo.CurveMotion.Editor
             using (new EditorGUILayout.HorizontalScope())
             {
                 var target = (Transform)EditorGUILayout.ObjectField(
-                    new GUIContent("预览目标", "场景里的对象。路径从它的当前位置开始绘制，预览时在它身上播放，结束自动还原。"),
+                    new GUIContent("预览目标", "场景里的对象。打开“预览”后，路径从它的当前位置开始画在 Scene 视图里，动效在它身上播放，关掉预览自动还原。"),
                     m_Target, typeof(Transform), true);
                 // 换对象会改变下面显示哪些行（相机、提示），跳过本次剩余的绘制。
                 if (target != m_Target) { SetTarget(target); GUIUtility.ExitGUI(); }
@@ -989,12 +1045,20 @@ namespace Limbo.CurveMotion.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                bool edit = GUILayout.Toggle(m_EditPath, new GUIContent("编辑路径", "在 Scene 视图中显示路径手柄"), EditorStyles.miniButtonLeft);
-                if (edit != m_EditPath) { m_EditPath = edit; SceneView.RepaintAll(); }
-
-                using (new EditorGUI.DisabledScope(m_Target == null))
+                bool edit = GUILayout.Toggle(m_EditPath, new GUIContent("编辑路径", "预览时在 Scene 视图显示路径点和切线手柄，可拖动编辑。打开时如果没在预览，会顺带打开预览。"), EditorStyles.miniButtonLeft);
+                if (edit != m_EditPath)
                 {
-                    bool preview = GUILayout.Toggle(m_Preview, new GUIContent("预览", m_Target == null ? "先指定预览目标" : "在预览目标上应用动效"), EditorStyles.miniButtonMid);
+                    m_EditPath = edit;
+                    if (edit && !m_Preview) StartPreview();
+                    SceneView.RepaintAll();
+                }
+
+                string previewTip = m_Target == null ? "先指定预览目标"
+                    : !CanPreview ? "预览目标不在当前打开的场景/预制体里。回到那里后会接着预览。"
+                    : "打开：Scene 视图显示路径，动效按播放头作用在预览目标上（0 秒时就是对象原样，拖播放头或点播放才看得到变化）。关掉：隐藏路径，对象还原。";
+                using (new EditorGUI.DisabledScope(!CanPreview))
+                {
+                    bool preview = GUILayout.Toggle(m_Preview, new GUIContent("预览", previewTip), EditorStyles.miniButtonMid);
                     if (preview != m_Preview)
                     {
                         if (preview) StartPreview(); else StopPreview();
@@ -1002,10 +1066,12 @@ namespace Limbo.CurveMotion.Editor
                     if (GUILayout.Button(m_Playing ? "暂停" : "播放", EditorStyles.miniButtonMid)) TogglePlay();
                 }
 
-                if (GUILayout.Button("停止", EditorStyles.miniButtonRight))
+                if (GUILayout.Button(new GUIContent("停止", "停止播放，回到 0 秒（不关预览）"), EditorStyles.miniButtonRight))
                 {
+                    m_Playing = false;
                     m_Time = 0f;
-                    StopPreview();
+                    ApplyPreview();
+                    Repaint();
                     SceneView.RepaintAll();
                 }
                 m_LoopPreview = GUILayout.Toggle(m_LoopPreview, new GUIContent("循环预览", "预览一直循环播放（与动效本身的循环设置无关）"), GUILayout.Width(72));
@@ -1143,7 +1209,7 @@ namespace Limbo.CurveMotion.Editor
             AnimationCurve curve = seg.ease.curve;
             if (easeType == EaseType.Custom)
                 curve = EditorGUILayout.CurveField("自定义曲线", curve ?? AnimationCurve.Linear(0f, 0f, 1f, 1f));
-            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“向左上弹起”"), seg.desc ?? "");
+            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“向左上弹起”。留空时用下面自动生成的描述。"), seg.desc ?? "");
             if (EditorGUI.EndChangeCheck())
             {
                 RecordUndo("Edit Path Segment");
@@ -1161,6 +1227,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
 
+            AutoDescHint(seg.desc, () => MotionDescriber.Segment(m_Asset.data, eval, index));
             EditorGUILayout.LabelField("实际时长 / 弧长",
                 $"{eval.GetSegmentDuration(index):0.###}s / {eval.GetSegmentLength(index):0.##}{(IsUiTarget ? " px" : "")}");
 
@@ -1181,6 +1248,13 @@ namespace Limbo.CurveMotion.Editor
         }
 
         static string LoopCountText(int count) => count < 0 ? "无限次" : $"共 {count} 次";
+
+        /// <summary>描述留空时，在下面用小字显示自动生成的描述（导出 JSON 和代码注释用的就是它）。</summary>
+        static void AutoDescHint(string manual, Func<string> auto)
+        {
+            if (!string.IsNullOrWhiteSpace(manual)) return;
+            EditorGUILayout.LabelField("自动：" + auto(), EditorStyles.wordWrappedMiniLabel);
+        }
 
         // ---------------------------------------------------------------- 轨道、片段、事件
 
@@ -1216,6 +1290,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
             EditorGUILayout.LabelField("类型", $"{track.DisplayName}（{track.TypeId}），{ModeHint(track)}");
+            DrawTrackSettings(track);
             EditorGUILayout.LabelField("片段数", track.clips.Count.ToString());
 
             using (new EditorGUILayout.HorizontalScope())
@@ -1224,6 +1299,29 @@ namespace Limbo.CurveMotion.Editor
                 if (GUILayout.Button("上移", GUILayout.Width(44))) { MoveTrack(m_SelTrack, -1); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("下移", GUILayout.Width(44))) { MoveTrack(m_SelTrack, 1); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("删除轨道", GUILayout.Width(64))) { DeleteTrack(m_SelTrack); GUIUtility.ExitGUI(); }
+            }
+        }
+
+        /// <summary>轨道子类带 [TrackSetting] 的字段，例如透明度作用在哪个组件上。改了要重新记录预览的初始值。</summary>
+        void DrawTrackSettings(MotionTrack track)
+        {
+            foreach (var field in MotionTrackSettings.Fields(track.GetType()))
+            {
+                var attr = MotionTrackSettings.Attribute(field);
+                var label = new GUIContent(attr.Label, attr.Tooltip);
+                object value = field.GetValue(track);
+                EditorGUI.BeginChangeCheck();
+                object changed;
+                if (field.FieldType.IsEnum) changed = EditorGUILayout.EnumPopup(label, (Enum)value);
+                else if (field.FieldType == typeof(bool)) changed = EditorGUILayout.Toggle(label, (bool)value);
+                else if (field.FieldType == typeof(int)) changed = EditorGUILayout.IntField(label, (int)value);
+                else if (field.FieldType == typeof(float)) changed = EditorGUILayout.FloatField(label, (float)value);
+                else changed = EditorGUILayout.TextField(label, (string)value ?? "");
+                if (!EditorGUI.EndChangeCheck()) continue;
+                RecordUndo("Edit Motion Track");
+                field.SetValue(track, changed);
+                TracksChanged();
+                MarkChanged();
             }
         }
 
@@ -1246,7 +1344,7 @@ namespace Limbo.CurveMotion.Editor
             if (easeType == EaseType.Custom)
                 curve = EditorGUILayout.CurveField("自定义曲线", curve ?? AnimationCurve.Linear(0f, 0f, 1f, 1f));
             var value = ClipValueField(track, clip.value);
-            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“落地压扁”"), clip.desc ?? "");
+            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“落地压扁”。留空时用下面自动生成的描述。"), clip.desc ?? "");
             if (EditorGUI.EndChangeCheck())
             {
                 RecordUndo("Edit Motion Clip");
@@ -1261,6 +1359,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
 
+            AutoDescHint(clip.desc, () => MotionDescriber.Clip(data, eval, m_SelTrack, m_SelClip));
             EditorGUILayout.LabelField(ModeHint(track), EditorStyles.miniLabel);
             bool truncated = end < start + clip.duration - 1e-4f;
             EditorGUILayout.LabelField("生效时间", truncated
@@ -1491,6 +1590,9 @@ namespace Limbo.CurveMotion.Editor
             AddContextProblems(list);
             if (data.loop.scope == MotionLoopScope.LastSegment && data.loop.count != 1 && data.points.Count < 2)
                 list.Add(new Problem(MessageType.Info, "设成了尾段自循环，但还没有路径段，暂按整段循环。"));
+            var exportProblems = new List<(MessageType type, string text)>();
+            DotweenExportActions.CollectProblems(data, exportProblems);
+            foreach (var p in exportProblems) list.Add(new Problem(p.type, p.text));
             return list;
         }
 
@@ -1561,7 +1663,7 @@ namespace Limbo.CurveMotion.Editor
 
         void DrawFooter()
         {
-            WindowSection.Begin("导出", "JSON 给 AI 或其他工具读", WindowSection.ExportAccent);
+            WindowSection.Begin("导出", "JSON 给 AI 读；DOTween 代码直接放进工程", WindowSection.ExportAccent);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("复制 JSON"))
@@ -1571,6 +1673,33 @@ namespace Limbo.CurveMotion.Editor
                 }
                 if (GUILayout.Button("导出 JSON…")) ExportJson();
                 if (GUILayout.Button("导入 JSON…")) ImportJson();
+            }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var copyTip = new GUIContent("复制 DOTween 代码", $"生成静态类 {DotweenExportActions.ClassName(m_Asset.data)}，调用 Play(target) 播放，结果与预览一致");
+                if (GUILayout.Button(copyTip)) DotweenExportActions.Copy(this, m_Asset.data);
+                if (GUILayout.Button(new GUIContent("导出 C#…", "保存成 .cs 文件，类名跟文件名一致；存到 Assets 下会自动导入"))) DotweenExportActions.Export(this, m_Asset.data);
+            }
+            EditorGUI.BeginChangeCheck();
+            string ns = EditorGUILayout.DelayedTextField(new GUIContent("代码命名空间", "导出代码放进这个命名空间，留空为全局。整个工程共用。"), DotweenExportActions.Namespace);
+            if (EditorGUI.EndChangeCheck()) DotweenExportActions.Namespace = ns.Trim();
+            if (!DotweenExportActions.HasDotween)
+            {
+                EditorGUILayout.LabelField("本工程没装 DOTween：代码可以复制或导出到工程外，放进 Assets 会编译报错。", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying || m_Target == null))
+                {
+                    var runTip = new GUIContent("Play 模式试播导出代码", EditorApplication.isPlaying
+                        ? "在预览目标上用导出到 Assets 的类真正跑一遍 DOTween，和预览对比；再点一次从头重播"
+                        : "进入 Play 模式后可用：先“导出 C#…”到 Assets 下");
+                    if (GUILayout.Button(runTip))
+                    {
+                        StopPreview();
+                        DotweenExportActions.RunInPlayMode(this, m_Asset.data, m_Target, m_EndTarget, m_WorldCamera);
+                    }
+                }
             }
             WindowSection.End();
         }

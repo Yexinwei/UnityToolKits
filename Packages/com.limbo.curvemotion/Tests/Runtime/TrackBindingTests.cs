@@ -44,6 +44,30 @@ namespace Limbo.CurveMotion.Tests
         }
 
         [Test]
+        public void Alpha_SpriteSource_IgnoresCanvasGroup()
+        {
+            var go = new GameObject();
+            var group = go.AddComponent<CanvasGroup>();
+            var sprite = go.AddComponent<SpriteRenderer>();
+            var track = new AlphaTrack { source = AlphaSource.SpriteRenderer };
+            Assert.IsTrue(track.TryReadValue(go, out _));
+            track.WriteValue(go, new Vector4(0.25f, 0f, 0f, 0f));
+            Assert.AreEqual(1f, group.alpha, 1e-6f, "指定了 SpriteRenderer 就不动 CanvasGroup");
+            Assert.AreEqual(0.25f, sprite.color.a, 1e-6f);
+        }
+
+        [Test]
+        public void Alpha_CanvasGroupSource_WithoutGroup_IsUnsupported()
+        {
+            var go = new GameObject();
+            var sprite = go.AddComponent<SpriteRenderer>();
+            var track = new AlphaTrack { source = AlphaSource.CanvasGroup };
+            Assert.IsFalse(track.TryReadValue(go, out _), "指定了 CanvasGroup 就不退回到别的组件");
+            track.WriteValue(go, new Vector4(0.25f, 0f, 0f, 0f));
+            Assert.AreEqual(1f, sprite.color.a, 1e-6f);
+        }
+
+        [Test]
         public void Alpha_WithoutComponent_IsUnsupported()
         {
             Assert.IsFalse(new AlphaTrack().TryReadValue(new GameObject(), out _));
