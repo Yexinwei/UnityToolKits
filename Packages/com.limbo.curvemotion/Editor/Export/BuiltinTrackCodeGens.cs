@@ -39,19 +39,64 @@ namespace Limbo.CurveMotion.Editor.Export
         }
     }
 
-    /// <summary>透明度：UI 先找 CanvasGroup 再找 Graphic（含 TextMeshPro），场景物体用 SpriteRenderer，与预览一致。</summary>
+    /// <summary>
+    /// 透明度，按轨道的“作用组件”（<see cref="AlphaTrack.source"/>）取组件。自动：UI 先找 CanvasGroup 再找 Graphic（含 TextMeshPro），
+    /// 场景物体用 SpriteRenderer，与预览一致。组件不存在时不报错，透明度不变。
+    /// </summary>
     [TrackCodeGen(typeof(AlphaTrack))]
     public sealed class AlphaCodeGen : TrackCodeGen
     {
         public override TrackBinding Bind(DotweenCodeContext ctx, MotionTrack track)
         {
             string t = ctx.Target;
+            var source = track is AlphaTrack alpha ? alpha.source : AlphaSource.Auto;
+            // 场景物体的“自动”只会用到 SpriteRenderer；UI 的“自动”走 default 分支。
+            if (source == AlphaSource.Auto && !ctx.IsUi) source = AlphaSource.SpriteRenderer;
             string args;
-            if (ctx.IsUi)
+            switch (source)
             {
-                ctx.Using("UnityEngine.UI");
-                args = ctx.Declare("canvasGroup", t + ".GetComponent<CanvasGroup>()") + ", " + ctx.Declare("graphic", t + ".GetComponent<Graphic>()");
-                ctx.Helper("alpha-ui",
+                case AlphaSource.CanvasGroup:
+                    args = ctx.Declare("canvasGroup", t + ".GetComponent<CanvasGroup>()");
+                    ctx.Helper("alpha-group",
+@"    static float GetAlpha(CanvasGroup group) => group != null ? group.alpha : 1f;
+
+    static void SetAlpha(CanvasGroup group, float alpha)
+    {
+        if (group != null) group.alpha = alpha;
+    }");
+                    break;
+                case AlphaSource.Graphic:
+                    ctx.Using("UnityEngine.UI");
+                    args = ctx.Declare("graphic", t + ".GetComponent<Graphic>()");
+                    ctx.Helper("alpha-graphic",
+@"    static float GetAlpha(Graphic graphic) => graphic != null ? graphic.color.a : 1f;
+
+    static void SetAlpha(Graphic graphic, float alpha)
+    {
+        if (graphic == null) return;
+        var color = graphic.color;
+        color.a = alpha;
+        graphic.color = color;
+    }");
+                    break;
+                case AlphaSource.SpriteRenderer:
+                    args = ctx.Declare("sprite", t + ".GetComponent<SpriteRenderer>()");
+                    ctx.Helper("alpha-sprite",
+@"    static float GetAlpha(SpriteRenderer sprite) => sprite != null ? sprite.color.a : 1f;
+
+    static void SetAlpha(SpriteRenderer sprite, float alpha)
+    {
+        if (sprite == null) return;
+        var color = sprite.color;
+        color.a = alpha;
+        sprite.color = color;
+    }");
+                    break;
+                default:
+                    // UI 的“自动”：有 CanvasGroup 用它，否则用 Graphic。
+                    ctx.Using("UnityEngine.UI");
+                    args = ctx.Declare("canvasGroup", t + ".GetComponent<CanvasGroup>()") + ", " + ctx.Declare("graphic", t + ".GetComponent<Graphic>()");
+                    ctx.Helper("alpha-ui",
 @"    static float GetAlpha(CanvasGroup group, Graphic graphic) => group != null ? group.alpha : graphic != null ? graphic.color.a : 1f;
 
     static void SetAlpha(CanvasGroup group, Graphic graphic, float alpha)
@@ -62,20 +107,7 @@ namespace Limbo.CurveMotion.Editor.Export
         color.a = alpha;
         graphic.color = color;
     }");
-            }
-            else
-            {
-                args = ctx.Declare("sprite", t + ".GetComponent<SpriteRenderer>()");
-                ctx.Helper("alpha-sprite",
-@"    static float GetAlpha(SpriteRenderer sprite) => sprite != null ? sprite.color.a : 1f;
-
-    static void SetAlpha(SpriteRenderer sprite, float alpha)
-    {
-        if (sprite == null) return;
-        var color = sprite.color;
-        color.a = alpha;
-        sprite.color = color;
-    }");
+                    break;
             }
             string initial = ctx.UniqueName("alpha0");
             return new TrackBinding

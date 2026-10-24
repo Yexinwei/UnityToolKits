@@ -63,10 +63,27 @@ namespace Limbo.CurveMotion
         static string Signed(float v) => (v > 0f ? "+" : "") + MotionDescriber.Num(v, 2);
     }
 
-    /// <summary>透明度，绝对值 0~1。依次查找 CanvasGroup、Graphic、SpriteRenderer。</summary>
+    /// <summary>透明度作用在对象的哪个组件上。</summary>
+    public enum AlphaSource
+    {
+        /// <summary>有 CanvasGroup 用 CanvasGroup，否则 Graphic，再否则 SpriteRenderer。</summary>
+        [InspectorName("自动")] Auto,
+        /// <summary>CanvasGroup.alpha，连同子节点一起淡入淡出。</summary>
+        CanvasGroup,
+        /// <summary>UGUI 的 Graphic（Image、Text、TextMeshPro 等）的 color.a，只影响这一个。</summary>
+        [InspectorName("Graphic（Image / Text 等）")] Graphic,
+        /// <summary>SpriteRenderer.color.a。</summary>
+        SpriteRenderer,
+    }
+
+    /// <summary>透明度，绝对值 0~1。作用的组件由 <see cref="source"/> 决定，默认依次查找 CanvasGroup、Graphic、SpriteRenderer。</summary>
     [Serializable, MotionTrack("alpha", "Alpha")]
     public class AlphaTrack : MotionTrack
     {
+        [TrackSetting("作用组件", "自动：有 CanvasGroup 用 CanvasGroup（连同子节点一起变），否则用 Graphic（Image / Text 等），再否则用 SpriteRenderer。\n" +
+            "指定了组件就只改它，例如对象上同时有 CanvasGroup 和 Image 时选 Graphic，只淡出这张图。")]
+        public AlphaSource source = AlphaSource.Auto;
+
         public override int Dimension => 1;
         public override ValueMode Mode => ValueMode.Absolute;
         public override Vector4 DefaultValue => new Vector4(1f, 0f, 0f, 0f);
@@ -75,24 +92,51 @@ namespace Limbo.CurveMotion
         public override bool TryReadValue(GameObject target, out Vector4 value)
         {
             value = DefaultValue;
-            var group = target.GetComponent<CanvasGroup>();
-            if (group != null) { value.x = group.alpha; return true; }
-            if (ColorTargets.TryGetColor(target, out var color)) { value.x = color.a; return true; }
-            return false;
+            if (!TryRead(target, out float alpha)) return false;
+            value.x = alpha;
+            return true;
+        }
+
+        bool TryRead(GameObject target, out float alpha)
+        {
+            alpha = 1f;
+            if (UseCanvasGroup(target, out var group)) { alpha = group.alpha; return true; }
+            if (source == AlphaSource.CanvasGroup) return false;
+            bool found = source == AlphaSource.SpriteRenderer ? ColorTargets.TryGetSpriteColor(target, out var color)
+                : source == AlphaSource.Graphic ? ColorTargets.TryGetGraphicColor(target, out color)
+                : ColorTargets.TryGetColor(target, out color);
+            if (found) alpha = color.a;
+            return found;
         }
 
         public override void WriteValue(GameObject target, Vector4 value)
         {
-            var group = target.GetComponent<CanvasGroup>();
-            if (group != null) { group.alpha = value.x; return; }
-            if (!ColorTargets.TryGetColor(target, out var color)) return;
-            color.a = value.x;
-            ColorTargets.SetColor(target, color);
+            if (UseCanvasGroup(target, out var group)) { group.alpha = value.x; return; }
+            switch (source)
+            {
+                case AlphaSource.CanvasGroup:
+                    return;
+                case AlphaSource.Graphic:
+                    if (ColorTargets.TryGetGraphicColor(target, out var color)) { color.a = value.x; ColorTargets.SetGraphicColor(target, color); }
+                    return;
+                case AlphaSource.SpriteRenderer:
+                    if (ColorTargets.TryGetSpriteColor(target, out color)) { color.a = value.x; ColorTargets.SetSpriteColor(target, color); }
+                    return;
+                default:
+                    if (ColorTargets.TryGetColor(target, out color)) { color.a = value.x; ColorTargets.SetColor(target, color); }
+                    return;
+            }
+        }
+
+        bool UseCanvasGroup(GameObject target, out CanvasGroup group)
+        {
+            group = source == AlphaSource.Auto || source == AlphaSource.CanvasGroup ? target.GetComponent<CanvasGroup>() : null;
+            return group != null;
         }
 
         public override string DescribeValue(Vector4 value)
         {
-            string text = "透明度变为 " + MotionDescriber.Num(value.x, 3);
+            string text = (source == AlphaSource.Auto ? "" : source + " ") + "透明度变为 " + MotionDescriber.Num(value.x, 3);
             if (value.x <= 1e-3f) return text + "（完全透明）";
             if (value.x >= 1f - 1e-3f) return text + "（不透明）";
             return text;
@@ -128,26 +172,47 @@ namespace Limbo.CurveMotion
     /// <summary>颜色来源：UGUI 的 Graphic（含 TextMeshPro）优先，其次 SpriteRenderer。</summary>
     static class ColorTargets
     {
-        public static bool TryGetColor(GameObject target, out Color color)
+        public static bool TryGetColor(GameObject target, out Color color) =>
+            TryGetGraphicColor(target, out color) || TryGetSpriteColor(target, out color);
+
+        public static void SetColor(GameObject target, Color color)
+        {
+            if (!SetGraphicColor(target, color)) SetSpriteColor(target, color);
+        }
+
+        public static bool TryGetGraphicColor(GameObject target, out Color color)
         {
 #if CURVEMOTION_UGUI
             var graphic = target.GetComponent<Graphic>();
             if (graphic != null) { color = graphic.color; return true; }
 #endif
+            color = Color.white;
+            return false;
+        }
+
+        public static bool SetGraphicColor(GameObject target, Color color)
+        {
+#if CURVEMOTION_UGUI
+            var graphic = target.GetComponent<Graphic>();
+            if (graphic != null) { graphic.color = color; return true; }
+#endif
+            return false;
+        }
+
+        public static bool TryGetSpriteColor(GameObject target, out Color color)
+        {
             var sprite = target.GetComponent<SpriteRenderer>();
             if (sprite != null) { color = sprite.color; return true; }
             color = Color.white;
             return false;
         }
 
-        public static void SetColor(GameObject target, Color color)
+        public static bool SetSpriteColor(GameObject target, Color color)
         {
-#if CURVEMOTION_UGUI
-            var graphic = target.GetComponent<Graphic>();
-            if (graphic != null) { graphic.color = color; return; }
-#endif
             var sprite = target.GetComponent<SpriteRenderer>();
-            if (sprite != null) sprite.color = color;
+            if (sprite == null) return false;
+            sprite.color = color;
+            return true;
         }
     }
 }

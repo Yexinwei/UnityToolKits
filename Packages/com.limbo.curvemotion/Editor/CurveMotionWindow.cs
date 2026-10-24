@@ -1290,6 +1290,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
             EditorGUILayout.LabelField("类型", $"{track.DisplayName}（{track.TypeId}），{ModeHint(track)}");
+            DrawTrackSettings(track);
             EditorGUILayout.LabelField("片段数", track.clips.Count.ToString());
 
             using (new EditorGUILayout.HorizontalScope())
@@ -1298,6 +1299,29 @@ namespace Limbo.CurveMotion.Editor
                 if (GUILayout.Button("上移", GUILayout.Width(44))) { MoveTrack(m_SelTrack, -1); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("下移", GUILayout.Width(44))) { MoveTrack(m_SelTrack, 1); GUIUtility.ExitGUI(); }
                 if (GUILayout.Button("删除轨道", GUILayout.Width(64))) { DeleteTrack(m_SelTrack); GUIUtility.ExitGUI(); }
+            }
+        }
+
+        /// <summary>轨道子类带 [TrackSetting] 的字段，例如透明度作用在哪个组件上。改了要重新记录预览的初始值。</summary>
+        void DrawTrackSettings(MotionTrack track)
+        {
+            foreach (var field in MotionTrackSettings.Fields(track.GetType()))
+            {
+                var attr = MotionTrackSettings.Attribute(field);
+                var label = new GUIContent(attr.Label, attr.Tooltip);
+                object value = field.GetValue(track);
+                EditorGUI.BeginChangeCheck();
+                object changed;
+                if (field.FieldType.IsEnum) changed = EditorGUILayout.EnumPopup(label, (Enum)value);
+                else if (field.FieldType == typeof(bool)) changed = EditorGUILayout.Toggle(label, (bool)value);
+                else if (field.FieldType == typeof(int)) changed = EditorGUILayout.IntField(label, (int)value);
+                else if (field.FieldType == typeof(float)) changed = EditorGUILayout.FloatField(label, (float)value);
+                else changed = EditorGUILayout.TextField(label, (string)value ?? "");
+                if (!EditorGUI.EndChangeCheck()) continue;
+                RecordUndo("Edit Motion Track");
+                field.SetValue(track, changed);
+                TracksChanged();
+                MarkChanged();
             }
         }
 

@@ -121,6 +121,28 @@ namespace Limbo.CurveMotion.Tests.Harness
         }
 
         [Test]
+        public void Alpha_GraphicSource_LeavesCanvasGroup()
+        {
+            var data = Rich(TargetKind.RectTransform);
+            ((AlphaTrack)data.tracks[2]).source = AlphaSource.Graphic;
+            var run = new Run(data);
+            run.Play();
+            var group = run.Target.GetComponent<CanvasGroup>();
+            run.Compare(run.Eval.TotalDuration + 0.25f, everyFrame: () => Assert.AreEqual(0.8f, group.alpha, 1e-6f, "CanvasGroup 不动"));
+        }
+
+        [Test]
+        public void Alpha_CanvasGroupSource_OnSceneObject()
+        {
+            var data = Rich(TargetKind.Transform, scale: 0.01f);
+            ((AlphaTrack)data.tracks[2]).source = AlphaSource.CanvasGroup;
+            var run = new Run(data);
+            run.Play();
+            var sprite = run.Target.GetComponent<SpriteRenderer>();
+            run.Compare(run.Eval.TotalDuration + 0.25f, everyFrame: () => Assert.AreEqual(0.8f, sprite.color.a, 1e-6f, "SpriteRenderer 的透明度不动"));
+        }
+
+        [Test]
         public void EndBound_Scene_FollowsEndTarget()
         {
             var data = Rich(TargetKind.Transform, scale: 0.01f);
@@ -356,11 +378,13 @@ namespace Limbo.CurveMotion.Tests.Harness
                 else
                 {
                     go.AddComponent<SpriteRenderer>().color = new Color(0.9f, 0.9f, 0.9f, 0.8f);
+                    // 场景物体指定 CanvasGroup 时用它（透明度起点 0.6，和 SpriteRenderer 的区分开）。
+                    if (AlphaSourceOf == AlphaSource.CanvasGroup) go.AddComponent<CanvasGroup>().alpha = 0.6f;
                 }
                 StartLocal = Target.localPosition;
                 m_InitialScale = Target.localScale;
                 m_InitialRotation = Target.localEulerAngles;
-                m_InitialAlpha = new Vector4(0.8f, 0f, 0f, 0f);
+                m_InitialAlpha = new Vector4(Alpha(), 0f, 0f, 0f);
                 m_InitialColor = new Vector4(0.9f, 0.9f, 0.9f, 0f);
 
                 var args = new List<object>();
@@ -432,11 +456,26 @@ namespace Limbo.CurveMotion.Tests.Harness
                 return Math.Abs(k - Math.Round(k)) * Eval.LoopLength < 1e-4;
             }
 
+            /// <summary>第一条透明度轨道的“作用组件”，“自动”按导出规则换成实际用的组件。</summary>
+            AlphaSource AlphaSourceOf
+            {
+                get
+                {
+                    var source = Data.tracks.OfType<AlphaTrack>().FirstOrDefault()?.source ?? AlphaSource.Auto;
+                    if (source != AlphaSource.Auto) return source;
+                    return m_Ui ? AlphaSource.CanvasGroup : AlphaSource.SpriteRenderer;
+                }
+            }
+
             float Alpha()
             {
                 var go = Target.gameObject;
-                if (m_Ui) return go.GetComponent<CanvasGroup>().alpha;
-                return go.GetComponent<SpriteRenderer>().color.a;
+                switch (AlphaSourceOf)
+                {
+                    case AlphaSource.CanvasGroup: return go.GetComponent<CanvasGroup>().alpha;
+                    case AlphaSource.Graphic: return go.GetComponent<Graphic>().color.a;
+                    default: return go.GetComponent<SpriteRenderer>().color.a;
+                }
             }
 
             Vector3 Rgb()

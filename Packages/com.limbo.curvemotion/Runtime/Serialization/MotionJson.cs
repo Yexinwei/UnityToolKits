@@ -36,6 +36,8 @@ namespace Limbo.CurveMotion.Serialization
             w.Field("loop", "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start " +
                 "(the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. " +
                 "Yoyo plays every other repeat backwards.");
+            w.Field("settings", "Track-specific options. alpha.source: which component the alpha is applied to. Auto = CanvasGroup if the object has one (fades its children too), " +
+                "else Graphic (Image, Text, TextMeshPro), else SpriteRenderer; CanvasGroup / Graphic / SpriteRenderer = only that component on the object.");
             w.Field("desc", "One-sentence description of a segment, clip or event. descSource manual = written by the author; auto = generated from the data (ignored when the JSON is read back).");
             w.Field("endTarget", "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, " +
                 "convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, " +
@@ -107,6 +109,54 @@ namespace Limbo.CurveMotion.Serialization
             w.EndObject();
         }
 
+        /// <summary>轨道子类的设置字段（<see cref="TrackSettingAttribute"/>），枚举写成名字。没有设置的轨道不写。</summary>
+        static void WriteSettings(JsonWriter w, MotionTrack track)
+        {
+            var fields = MotionTrackSettings.Fields(track.GetType());
+            if (fields.Count == 0) return;
+            w.Name("settings").BeginObject();
+            foreach (var f in fields)
+            {
+                object v = f.GetValue(track);
+                w.Name(f.Name);
+                switch (v)
+                {
+                    case bool b: w.Value(b); break;
+                    case int i: w.Value(i); break;
+                    case float x: w.Value(x); break;
+                    default: w.Value(v?.ToString() ?? ""); break;
+                }
+            }
+            w.EndObject();
+        }
+
+        static void ReadSettings(Dictionary<string, object> json, MotionTrack track, List<string> warnings)
+        {
+            if (!(GetObject(json, "settings") is Dictionary<string, object> settings)) return;
+            foreach (var f in MotionTrackSettings.Fields(track.GetType()))
+            {
+                if (!settings.TryGetValue(f.Name, out var v)) continue;
+                var type = f.FieldType;
+                if (type.IsEnum)
+                {
+                    if (v is string name && TryParseEnum(type, name, out var e)) f.SetValue(track, e);
+                    else warnings?.Add($"轨道 {track.TypeId} 的设置 {f.Name} 不认识 '{v}'，用默认值");
+                }
+                else if (type == typeof(bool) && v is bool b) f.SetValue(track, b);
+                else if (type == typeof(int) && v is double n) f.SetValue(track, (int)Math.Round(n));
+                else if (type == typeof(float) && v is double x) f.SetValue(track, (float)x);
+                else if (type == typeof(string) && v is string str) f.SetValue(track, str);
+            }
+        }
+
+        static bool TryParseEnum(Type type, string name, out object value)
+        {
+            foreach (var n in Enum.GetNames(type))
+                if (string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) { value = Enum.Parse(type, n); return true; }
+            value = null;
+            return false;
+        }
+
         static void WriteTracks(JsonWriter w, MotionData data, MotionEvaluator eval)
         {
             w.Name("tracks").BeginArray();
@@ -123,6 +173,7 @@ namespace Limbo.CurveMotion.Serialization
                 var names = track.ComponentNames;
                 for (int c = 0; c < track.Dimension && c < names.Length; c++) w.Value(names[c]);
                 w.EndArray();
+                WriteSettings(w, track);
 
                 w.Name("clips").BeginArray();
                 for (int ci = 0; ci < track.clips.Count; ci++)
@@ -276,6 +327,7 @@ namespace Limbo.CurveMotion.Serialization
                 }
                 track.name = GetString(t, "name", track.name);
                 track.enabled = GetBool(t, "enabled", true);
+                ReadSettings(t, track, warnings);
                 foreach (var c in GetList(t, "clips"))
                 {
                     if (!(c is Dictionary<string, object> clip)) continue;

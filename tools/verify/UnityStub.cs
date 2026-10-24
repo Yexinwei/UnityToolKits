@@ -159,6 +159,9 @@ namespace UnityEngine
     public sealed class TextAreaAttribute : Attribute { }
 
     [AttributeUsage(AttributeTargets.Field)]
+    public sealed class InspectorNameAttribute : Attribute { public InspectorNameAttribute(string displayName) { } }
+
+    [AttributeUsage(AttributeTargets.Field)]
     public sealed class MinAttribute : Attribute { public MinAttribute(float min) { } }
 
     public static class Mathf

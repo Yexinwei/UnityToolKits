@@ -141,6 +141,33 @@ namespace Limbo.CurveMotion.Tests
         }
 
         [Test]
+        public void Alpha_Source_PicksComponent()
+        {
+            var data = Line(TargetKind.RectTransform, 1f);
+            var alpha = new AlphaTrack { source = AlphaSource.Graphic };
+            alpha.AddClip("p0", 0f, 1f).value = new Vector4(0f, 0f, 0f, 0f);
+            data.tracks.Add(alpha);
+            var code = Generate(data);
+            StringAssert.Contains("var graphic = target.GetComponent<Graphic>();", code);
+            StringAssert.Contains("static void SetAlpha(Graphic graphic, float alpha)", code);
+            StringAssert.DoesNotContain("CanvasGroup", code, "指定 Graphic 时不碰 CanvasGroup");
+
+            alpha.source = AlphaSource.CanvasGroup;
+            data.target = TargetKind.Transform;
+            code = Generate(data);
+            StringAssert.Contains("var canvasGroup = target.GetComponent<CanvasGroup>();", code);
+            StringAssert.Contains("static void SetAlpha(CanvasGroup group, float alpha)", code);
+            StringAssert.DoesNotContain("SpriteRenderer", code, "场景物体也能指定 CanvasGroup");
+            StringAssert.DoesNotContain("using UnityEngine.UI;", code);
+
+            alpha.source = AlphaSource.SpriteRenderer;
+            data.target = TargetKind.RectTransform;
+            code = Generate(data);
+            StringAssert.Contains("static void SetAlpha(SpriteRenderer sprite, float alpha)", code);
+            StringAssert.DoesNotContain("using UnityEngine.UI;", code);
+        }
+
+        [Test]
         public void SceneAlphaAndColor_UseSpriteRenderer()
         {
             var data = Line(TargetKind.Transform, 1f);

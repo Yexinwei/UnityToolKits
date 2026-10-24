@@ -30,7 +30,7 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
    - 标尺：点击或拖动定位播放头，目标对象同步显示该时刻的状态。
    - 路径行：每段一块，拖动段之间的竖线改前一段的时长（速度模式的段会反算速度），后面的点、片段、事件跟着移动。
    - 事件行：双击空白处加事件，拖动改时间。
-   - 属性轨道：“+ 添加属性轨道”选择缩放、旋转、透明度、颜色等；双击空白处加片段，拖动片段移动，拖两端改时长。同一轨道后面的片段会覆盖前面的，被覆盖的部分显示为半透明。
+   - 属性轨道：“+ 添加属性轨道”选择缩放、旋转、透明度、颜色等；双击空白处加片段，拖动片段移动，拖两端改时长。同一轨道后面的片段会覆盖前面的，被覆盖的部分显示为半透明。选中轨道可改它的设置，例如透明度的“作用组件”：自动（有 CanvasGroup 用 CanvasGroup，否则 Graphic，再否则 SpriteRenderer）、CanvasGroup（连同子节点一起淡）、Graphic（只改这一张 Image / Text）、SpriteRenderer。预览和导出代码都按这个设置走。
    - 拖动时吸附到路径点、事件、其他片段边界和播放头，按住 Ctrl/⌘ 临时关闭。右键有插入、复制、删除等操作。
 5. 时间轴下方分两块：
    - **单段编辑**（黄色）：只改选中的那一项。路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、日志内容、锚点、偏移）。
@@ -123,6 +123,13 @@ public class MyPropTrack : MotionTrack
 ```
 
 `typeId`（这里的 `myProp`）会写进 JSON，发布后不要改。
+
+轨道需要可调的选项时，加一个带 `[TrackSetting]` 的字段（枚举、bool、int、float、string），选中轨道时窗口里会显示，JSON 写在轨道的 `settings` 里，代码生成器里按 `track` 的字段值生成不同代码：
+
+```csharp
+[TrackSetting("作用组件", "鼠标悬停时的说明")]
+public MySource source = MySource.Auto;
+```
 
 要导出 DOTween 代码，在 Editor 程序集里加一个代码生成器，说明怎么读写这个属性；片段时间、截断、循环由导出器统一处理：
 
