@@ -1,5 +1,6 @@
-// UnityEngine 最小桩，仅供 tools/verify 在无 Unity 环境下编译运行 Runtime 代码。
-// 签名与 Unity 保持一致；只实现 Runtime 用到的成员。不要放进包里。
+// UnityEngine 最小桩，仅供 tools/verify 在无 Unity 环境下编译运行 Runtime 代码，
+// 以及编译运行导出的 DOTween 代码（Harness/）。签名与 Unity 保持一致；只实现用到的成员。不要放进包里。
+// Transform 只模拟平移（没有旋转、缩放对位置的影响），RectTransform 的 anchoredPosition 等于 localPosition 的 xy。
 using System;
 
 namespace UnityEngine
@@ -12,6 +13,16 @@ namespace UnityEngine
         public GameObject gameObject { get; internal set; }
         public Transform transform => gameObject.transform;
         public T GetComponent<T>() where T : Component => gameObject.GetComponent<T>();
+
+        public T GetComponentInParent<T>() where T : Component
+        {
+            for (var t = transform; t != null; t = t.parent)
+            {
+                var c = t.GetComponent<T>();
+                if (c != null) return c;
+            }
+            return null;
+        }
     }
 
     public class Transform : Component
@@ -19,6 +30,73 @@ namespace UnityEngine
         public Vector3 localPosition;
         public Vector3 localScale = Vector3.one;
         public Vector3 localEulerAngles;
+        public Transform parent { get; set; }
+
+        public Vector3 position
+        {
+            get => parent != null ? parent.position + localPosition : localPosition;
+            set => localPosition = parent != null ? value - parent.position : value;
+        }
+
+        public Vector3 TransformPoint(Vector3 p) => position + p;
+        public Vector3 InverseTransformPoint(Vector3 p) => p - position;
+    }
+
+    public class RectTransform : Transform
+    {
+        public Vector2 anchoredPosition
+        {
+            get => new Vector2(localPosition.x, localPosition.y);
+            set => localPosition = new Vector3(value.x, value.y, localPosition.z);
+        }
+    }
+
+    public enum RenderMode { ScreenSpaceOverlay, ScreenSpaceCamera, WorldSpace }
+
+    public class Canvas : Component
+    {
+        public RenderMode renderMode = RenderMode.ScreenSpaceOverlay;
+        public Camera worldCamera;
+
+        public Canvas rootCanvas
+        {
+            get
+            {
+                var root = this;
+                for (var t = transform.parent; t != null; t = t.parent)
+                {
+                    var c = t.GetComponent<Canvas>();
+                    if (c != null) root = c;
+                }
+                return root;
+            }
+        }
+    }
+
+    /// <summary>正交相机，屏幕坐标 = 世界坐标 xy（z 为离相机的距离）。</summary>
+    public class Camera : Component
+    {
+        public static Camera main { get; set; }
+        public Vector3 WorldToScreenPoint(Vector3 p) => new Vector3(p.x, p.y, p.z - transform.position.z);
+        public Vector3 ScreenToWorldPoint(Vector3 p) => new Vector3(p.x, p.y, p.z + transform.position.z);
+    }
+
+    public static class RectTransformUtility
+    {
+        public static Vector2 WorldToScreenPoint(Camera cam, Vector3 worldPoint) => new Vector2(worldPoint.x, worldPoint.y);
+
+        public static bool ScreenPointToLocalPointInRectangle(RectTransform rect, Vector2 screenPoint, Camera cam, out Vector2 localPoint)
+        {
+            var p = rect.InverseTransformPoint(new Vector3(screenPoint.x, screenPoint.y, 0f));
+            localPoint = new Vector2(p.x, p.y);
+            return true;
+        }
+    }
+
+    public static class Debug
+    {
+        public static readonly System.Collections.Generic.List<string> Logs = new System.Collections.Generic.List<string>();
+        public static void Log(object message) => Logs.Add(message?.ToString());
     }
 
     public class CanvasGroup : Component { public float alpha = 1f; }
@@ -29,6 +107,16 @@ namespace UnityEngine
     {
         readonly System.Collections.Generic.List<Component> m_Components = new System.Collections.Generic.List<Component>();
         public GameObject() { AddComponent<Transform>(); }
+
+        /// <summary>带 RectTransform 的对象（UI）。</summary>
+        public static GameObject CreateUi()
+        {
+            var go = new GameObject(false);
+            go.AddComponent<RectTransform>();
+            return go;
+        }
+
+        GameObject(bool _) { }
         public Transform transform => (Transform)m_Components[0];
         public T AddComponent<T>() where T : Component, new()
         {
@@ -81,6 +169,20 @@ namespace UnityEngine
         public static float Sqrt(float v) => (float)Math.Sqrt(v);
         public static float Max(float a, float b) => Math.Max(a, b);
         public static float Min(float a, float b) => Math.Min(a, b);
+        public static float LerpUnclamped(float a, float b, float t) => a + (b - a) * t;
+    }
+
+    public struct Vector2
+    {
+        public float x, y;
+        public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public static Vector2 zero => new Vector2(0, 0);
+        public static Vector2 operator +(Vector2 a, Vector2 b) => new Vector2(a.x + b.x, a.y + b.y);
+        public static Vector2 operator -(Vector2 a, Vector2 b) => new Vector2(a.x - b.x, a.y - b.y);
+        public static Vector2 operator *(Vector2 a, float d) => new Vector2(a.x * d, a.y * d);
+        public static implicit operator Vector2(Vector3 v) => new Vector2(v.x, v.y);
+        public static implicit operator Vector3(Vector2 v) => new Vector3(v.x, v.y, 0f);
+        public override string ToString() => $"({x:F3}, {y:F3})";
     }
 
     public struct Vector3
@@ -93,6 +195,8 @@ namespace UnityEngine
         public float magnitude => (float)Math.Sqrt(sqrMagnitude);
         public Vector3 normalized { get { float m = magnitude; return m > 1e-5f ? this / m : zero; } }
         public static float Distance(Vector3 a, Vector3 b) => (a - b).magnitude;
+        public static Vector3 Scale(Vector3 a, Vector3 b) => new Vector3(a.x * b.x, a.y * b.y, a.z * b.z);
+        public static Vector3 LerpUnclamped(Vector3 a, Vector3 b, float t) => a + (b - a) * t;
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
         public static Vector3 operator -(Vector3 a) => new Vector3(-a.x, -a.y, -a.z);
@@ -161,4 +265,9 @@ namespace UnityEngine
             return last.value;
         }
     }
+}
+
+namespace UnityEngine.UI
+{
+    public class Graphic : Component { public Color color = Color.white; }
 }

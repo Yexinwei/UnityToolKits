@@ -120,9 +120,14 @@ namespace Limbo.CurveMotion.Editor
             {
                 var points = m_Asset != null ? m_Asset.data.points : null;
                 var origin = points != null && points.Count > 0 ? points[0].position : Vector3.zero;
-                return m_PreviewState.GetPathMatrix(m_Target) * Matrix4x4.Translate(-origin);
+                return m_Target == null ? Matrix4x4.identity : MotionPreview.GetPathMatrix(m_Target, StartLocalPosition) * Matrix4x4.Translate(-origin);
             }
         }
+
+        /// <summary>预览目标的起始 localPosition：预览或 Play 模式试播中是开始时记下的值，否则是当前值。</summary>
+        Vector3 StartLocalPosition => DotweenExportActions.TryGetRunStart(m_Target, out var runStart)
+            ? runStart
+            : m_PreviewState.GetStartLocalPosition(m_Target);
 
         /// <summary>选中片段时，返回它在单次播放中的生效时间段，Scene 视图据此高亮对应的路径。</summary>
         internal bool TryGetSelectedClipSpan(out float start, out float end, out Color color)
@@ -733,7 +738,7 @@ namespace Limbo.CurveMotion.Editor
                 m_EndSyncFailed = false;
                 return;
             }
-            var startLocal = m_PreviewState.GetStartLocalPosition(m_Target);
+            var startLocal = StartLocalPosition;
             var camera = MixedSpace.ResolveWorldCamera(m_WorldCamera);
             bool ok = MixedSpace.TryGetEndOffset(m_Target, startLocal, m_EndTarget, camera, out var offset);
             if (ok != !m_EndSyncFailed)
@@ -753,6 +758,7 @@ namespace Limbo.CurveMotion.Editor
         void StartPreview()
         {
             if (m_Target == null || m_Asset == null) return;
+            DotweenExportActions.StopRun();
             m_PreviewState.Begin(m_Target, m_Asset.data);
             m_Preview = true;
             SaveMover();
@@ -1143,7 +1149,7 @@ namespace Limbo.CurveMotion.Editor
             AnimationCurve curve = seg.ease.curve;
             if (easeType == EaseType.Custom)
                 curve = EditorGUILayout.CurveField("自定义曲线", curve ?? AnimationCurve.Linear(0f, 0f, 1f, 1f));
-            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“向左上弹起”"), seg.desc ?? "");
+            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“向左上弹起”。留空时用下面自动生成的描述。"), seg.desc ?? "");
             if (EditorGUI.EndChangeCheck())
             {
                 RecordUndo("Edit Path Segment");
@@ -1161,6 +1167,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
 
+            AutoDescHint(seg.desc, () => MotionDescriber.Segment(m_Asset.data, eval, index));
             EditorGUILayout.LabelField("实际时长 / 弧长",
                 $"{eval.GetSegmentDuration(index):0.###}s / {eval.GetSegmentLength(index):0.##}{(IsUiTarget ? " px" : "")}");
 
@@ -1181,6 +1188,13 @@ namespace Limbo.CurveMotion.Editor
         }
 
         static string LoopCountText(int count) => count < 0 ? "无限次" : $"共 {count} 次";
+
+        /// <summary>描述留空时，在下面用小字显示自动生成的描述（导出 JSON 和代码注释用的就是它）。</summary>
+        static void AutoDescHint(string manual, Func<string> auto)
+        {
+            if (!string.IsNullOrWhiteSpace(manual)) return;
+            EditorGUILayout.LabelField("自动：" + auto(), EditorStyles.wordWrappedMiniLabel);
+        }
 
         // ---------------------------------------------------------------- 轨道、片段、事件
 
@@ -1246,7 +1260,7 @@ namespace Limbo.CurveMotion.Editor
             if (easeType == EaseType.Custom)
                 curve = EditorGUILayout.CurveField("自定义曲线", curve ?? AnimationCurve.Linear(0f, 0f, 1f, 1f));
             var value = ClipValueField(track, clip.value);
-            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“落地压扁”"), clip.desc ?? "");
+            string desc = EditorGUILayout.TextField(new GUIContent("描述", "写给 AI 看的一句话，例如“落地压扁”。留空时用下面自动生成的描述。"), clip.desc ?? "");
             if (EditorGUI.EndChangeCheck())
             {
                 RecordUndo("Edit Motion Clip");
@@ -1261,6 +1275,7 @@ namespace Limbo.CurveMotion.Editor
                 MarkChanged();
             }
 
+            AutoDescHint(clip.desc, () => MotionDescriber.Clip(data, eval, m_SelTrack, m_SelClip));
             EditorGUILayout.LabelField(ModeHint(track), EditorStyles.miniLabel);
             bool truncated = end < start + clip.duration - 1e-4f;
             EditorGUILayout.LabelField("生效时间", truncated
@@ -1491,6 +1506,9 @@ namespace Limbo.CurveMotion.Editor
             AddContextProblems(list);
             if (data.loop.scope == MotionLoopScope.LastSegment && data.loop.count != 1 && data.points.Count < 2)
                 list.Add(new Problem(MessageType.Info, "设成了尾段自循环，但还没有路径段，暂按整段循环。"));
+            var exportProblems = new List<(MessageType type, string text)>();
+            DotweenExportActions.CollectProblems(data, exportProblems);
+            foreach (var p in exportProblems) list.Add(new Problem(p.type, p.text));
             return list;
         }
 
@@ -1561,7 +1579,7 @@ namespace Limbo.CurveMotion.Editor
 
         void DrawFooter()
         {
-            WindowSection.Begin("导出", "JSON 给 AI 或其他工具读", WindowSection.ExportAccent);
+            WindowSection.Begin("导出", "JSON 给 AI 读；DOTween 代码直接放进工程", WindowSection.ExportAccent);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("复制 JSON"))
@@ -1571,6 +1589,33 @@ namespace Limbo.CurveMotion.Editor
                 }
                 if (GUILayout.Button("导出 JSON…")) ExportJson();
                 if (GUILayout.Button("导入 JSON…")) ImportJson();
+            }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var copyTip = new GUIContent("复制 DOTween 代码", $"生成静态类 {DotweenExportActions.ClassName(m_Asset.data)}，调用 Play(target) 播放，结果与预览一致");
+                if (GUILayout.Button(copyTip)) DotweenExportActions.Copy(this, m_Asset.data);
+                if (GUILayout.Button(new GUIContent("导出 C#…", "保存成 .cs 文件，类名跟文件名一致；存到 Assets 下会自动导入"))) DotweenExportActions.Export(this, m_Asset.data);
+            }
+            EditorGUI.BeginChangeCheck();
+            string ns = EditorGUILayout.DelayedTextField(new GUIContent("代码命名空间", "导出代码放进这个命名空间，留空为全局。整个工程共用。"), DotweenExportActions.Namespace);
+            if (EditorGUI.EndChangeCheck()) DotweenExportActions.Namespace = ns.Trim();
+            if (!DotweenExportActions.HasDotween)
+            {
+                EditorGUILayout.LabelField("本工程没装 DOTween：代码可以复制或导出到工程外，放进 Assets 会编译报错。", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying || m_Target == null))
+                {
+                    var runTip = new GUIContent("Play 模式试播导出代码", EditorApplication.isPlaying
+                        ? "在预览目标上用导出到 Assets 的类真正跑一遍 DOTween，和预览对比；再点一次从头重播"
+                        : "进入 Play 模式后可用：先“导出 C#…”到 Assets 下");
+                    if (GUILayout.Button(runTip))
+                    {
+                        StopPreview();
+                        DotweenExportActions.RunInPlayMode(this, m_Asset.data, m_Target, m_EndTarget, m_WorldCamera);
+                    }
+                }
             }
             WindowSection.End();
         }

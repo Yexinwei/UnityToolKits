@@ -5,7 +5,7 @@
 - 结构化 JSON（附自然语言描述，供 AI 解析）
 - DOTween C# 代码（由 JSON 生成）
 
-本包不依赖 DOTween，生成的代码粘贴到装了 DOTween 的项目即可使用。
+本包不依赖 DOTween，生成的代码放进装了 DOTween 的项目即可使用。
 
 ## 安装
 
@@ -38,7 +38,8 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
    - 窗口最下方是**提示与警告**，按错误 / 警告 / 提示分类列出。
 6. 快捷键（窗口有焦点时）：空格播放/暂停，Delete 删除选中项，Ctrl/⌘+D 复制一份，Ctrl/⌘+C / V 复制粘贴片段或事件（粘贴到播放头处）。
 7. 点“停止”、保存场景或进入 Play 模式时，对象自动还原。
-8. “复制 JSON”可直接粘贴给 AI；“导出/导入 JSON”读写文件。
+8. “复制 JSON”可直接粘贴给 AI；“导出/导入 JSON”读写文件。描述框留空时自动生成描述（框下方小字），JSON 和导出代码的注释都用它。
+9. “复制 DOTween 代码”/“导出 C#…”生成可直接放进工程的代码，见下方“导出 DOTween 代码”。
 
 ### UI 与 3D 混合（飞到另一个对象上）
 
@@ -58,6 +59,36 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 - 窗口“对象”区的“上次编辑”一行显示记录的位置，“打开”手动回去，“自动”关掉自动回去（本机设置）。
 - 对象按 GlobalObjectId 找，找不到再按层级路径找（预制体模式里只按路径），所以场景对象改名、挪层级也能找回；找不到时“提示与警告”会说明。
 - 未保存的新场景里的对象没法记，先保存场景。
+
+## 导出 DOTween 代码
+
+窗口“导出”区：
+
+- **复制 DOTween 代码**：生成的 C# 复制到剪贴板。
+- **导出 C#…**：保存成 `.cs`，类名跟文件名一致（默认由动效名生成，如 `demo-coin-fly` → `DemoCoinFlyMotion`）；存到 Assets 下会自动导入。
+- **代码命名空间**：留空放在全局命名空间，整个工程共用这个设置。
+- **Play 模式试播导出代码**：工程装了 DOTween、代码导出到 Assets 并编译完后，进入 Play 模式点它，会在预览目标（和落点对象）上真正跑一遍导出的代码，方便和编辑器预览对比；再点一次从头重播。
+
+生成的是一个静态类：
+
+```csharp
+// 以对象当前位置为起点、当前缩放/旋转/透明度/颜色为初始值播放，返回已开始播放的 Sequence
+var seq = DemoCoinFlyMotion.Play(coinRectTransform);
+
+// 终点绑定的动效多两个参数：落点对象（可以是 UI 或 3D 物体）和 UI/3D 换算用的相机（默认 Camera.main）
+DemoCoinFlyMotion.Play(coinRectTransform, walletIcon, Camera.main);
+
+// 有事件的动效可传回调（参数是事件名），不传时打印日志
+DemoCoinFlyMotion.Play(coin, onEvent: name => { if (name == "OnArrive") AddCoins(); });
+
+// 停止：target.DOKill() 或 seq.Kill()；对象销毁时自动停止
+```
+
+- 只依赖 UnityEngine 和 DOTween（UI 的透明度、颜色另需 UGUI）。DOTween 放在 Assets 里（默认的 Plugins/Demigiant）时直接可用；导出到带 asmdef 的目录时，asmdef 要引用 DOTween。
+- 播放结果与编辑器预览一致：路径每段一个 `DOVirtual.Float`，位置用与预览相同的贝塞尔 + 弧长算法；属性片段用 `DOScale` / `DOTween.To` 插入 Sequence，被同轨道后一个片段覆盖的部分截掉；循环、尾段自循环、事件、终点绑定都照预览的规则生成。
+- 无限的尾段自循环由两个 Sequence 组成，返回的是前半段（播完不自动销毁），Kill 它时循环部分一起停。
+- 终点绑定时路径走完后落点对象再移动，代码不再跟随。
+- 自定义属性轨道要导出代码，需要再写一个代码生成器（见下方“新增属性轨道”），没有的会跳过并在提示与警告里说明。
 
 ## 代码里使用
 
@@ -92,6 +123,27 @@ public class MyPropTrack : MotionTrack
 ```
 
 `typeId`（这里的 `myProp`）会写进 JSON，发布后不要改。
+
+要导出 DOTween 代码，在 Editor 程序集里加一个代码生成器，说明怎么读写这个属性；片段时间、截断、循环由导出器统一处理：
+
+```csharp
+using Limbo.CurveMotion.Editor.Export;
+
+[TrackCodeGen(typeof(MyPropTrack))]
+public class MyPropCodeGen : TrackCodeGen
+{
+    public override TrackBinding Bind(DotweenCodeContext ctx, MotionTrack track)
+    {
+        string comp = ctx.Declare("myComp", ctx.Target + ".GetComponent<MyComp>()");
+        return new TrackBinding
+        {
+            Read = comp + ".value",                       // 当前值
+            Write = v => comp + ".value = " + v,          // 写回
+            Initial = () => ctx.Declare("myProp0", comp + ".value"),   // 初始值（按倍率、增量算目标时用）
+        };
+    }
+}
+```
 
 ## 运行包内测试
 

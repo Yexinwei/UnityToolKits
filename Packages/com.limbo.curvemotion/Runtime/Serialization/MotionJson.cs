@@ -21,6 +21,7 @@ namespace Limbo.CurveMotion.Serialization
             w.Field("generator", CurveMotionInfo.PackageName);
             w.Field("name", data.name ?? "");
             w.Field("description", data.description ?? "");
+            w.Field("summary", MotionDescriber.Summary(data, eval));
             w.Field("target", data.target.ToString());
 
             w.Name("conventions").BeginObject();
@@ -35,6 +36,7 @@ namespace Limbo.CurveMotion.Serialization
             w.Field("loop", "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start " +
                 "(the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. " +
                 "Yoyo plays every other repeat backwards.");
+            w.Field("desc", "One-sentence description of a segment, clip or event. descSource manual = written by the author; auto = generated from the data (ignored when the JSON is read back).");
             w.Field("endTarget", "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, " +
                 "convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, " +
                 "a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. " +
@@ -98,7 +100,8 @@ namespace Limbo.CurveMotion.Serialization
                     .Field("speed", seg.speed)
                     .Field("length", eval.GetSegmentLength(i));
                 WriteEase(w, seg.ease);
-                w.Field("desc", seg.desc ?? "").EndObject();
+                WriteDesc(w, seg.desc, () => MotionDescriber.Segment(data, eval, i));
+                w.EndObject();
             }
             w.EndArray();
             w.EndObject();
@@ -135,7 +138,9 @@ namespace Limbo.CurveMotion.Serialization
                     w.Name("value").BeginArray(true);
                     for (int c = 0; c < track.Dimension; c++) w.Value(clip.value[c]);
                     w.EndArray();
-                    w.Field("desc", clip.desc ?? "").EndObject();
+                    int clipIndex = ci, trackIndex = ti;
+                    WriteDesc(w, clip.desc, () => MotionDescriber.Clip(data, eval, trackIndex, clipIndex));
+                    w.EndObject();
                 }
                 w.EndArray();
                 w.EndObject();
@@ -155,9 +160,18 @@ namespace Limbo.CurveMotion.Serialization
                     .Field("time", eval.GetEventTime(i))
                     .Field("name", e.name ?? "")
                     .Field("message", e.message ?? "")
+                    .Field("desc", MotionDescriber.Event(data, eval, i))
                     .EndObject();
             }
             w.EndArray();
+        }
+
+        /// <summary>手填的 desc 原样写出；没填时写自动生成的，并标明 descSource = auto，读回时忽略。</summary>
+        static void WriteDesc(JsonWriter w, string manual, Func<string> auto)
+        {
+            bool isManual = !string.IsNullOrWhiteSpace(manual);
+            w.Field("desc", isManual ? manual : auto());
+            w.Field("descSource", isManual ? "manual" : "auto");
         }
 
         static void WriteEase(JsonWriter w, EaseSpec ease)
@@ -244,7 +258,7 @@ namespace Limbo.CurveMotion.Serialization
                     duration = GetFloat(s, "duration", 0.5f),
                     speed = GetFloat(s, "speed", 1f),
                     ease = ReadEase(s, EaseType.Linear),
-                    desc = GetString(s, "desc", ""),
+                    desc = ReadDesc(s),
                 };
             }
         }
@@ -272,7 +286,7 @@ namespace Limbo.CurveMotion.Serialization
                         duration = GetFloat(clip, "duration", 0.3f),
                         ease = ReadEase(clip, EaseType.OutQuad),
                         value = GetVector4(clip, "value", track.DefaultValue),
-                        desc = GetString(clip, "desc", ""),
+                        desc = ReadDesc(clip),
                     });
                 }
                 data.tracks.Add(track);
@@ -293,6 +307,10 @@ namespace Limbo.CurveMotion.Serialization
                 });
             }
         }
+
+        /// <summary>自动生成的描述不读回（数据改了它会跟着变）；没有 descSource 的旧数据按手填处理。</summary>
+        static string ReadDesc(Dictionary<string, object> owner) =>
+            GetString(owner, "descSource", "manual") == "auto" ? "" : GetString(owner, "desc", "");
 
         static EaseSpec ReadEase(Dictionary<string, object> owner, EaseType fallback)
         {

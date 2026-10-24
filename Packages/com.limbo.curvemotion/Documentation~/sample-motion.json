@@ -3,6 +3,7 @@
   "generator": "com.limbo.curvemotion",
   "name": "CoinFlyToWallet",
   "description": "金币从奖励弹窗弹起后沿弧线飞向右上角钱包，途中放大再缩小，抵达时淡出。",
+  "summary": "UI 动效，单次 0.746 秒：路径 2 段，总长 905 px，属性变化 Scale、Alpha，事件 1 个；不循环。",
   "target": "RectTransform",
   "conventions": {
     "space": "All positions are offsets from the first path point; apply relative to the object's start position.",
@@ -12,12 +13,23 @@
     "pathTiming": "Each segment moves at constant speed along its arc length, shaped by the segment ease.",
     "clipTiming": "start = arrival time of anchor point + offset. A later clip on the same track overrides an earlier one; the earlier one is cut at the later one's start.",
     "clipValue": "scale: multiplier of initial localScale; rotation: euler delta added to initial; alpha/color: absolute 0-1. Each clip animates from the current value to its target.",
-    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent]."
+    "ease": "Ease names match DOTween's Ease enum with default overshoot 1.70158. Custom = AnimationCurve keys [time, value, inTangent, outTangent].",
+    "loop": "count = number of plays (-1 = infinite). scope Whole repeats the entire motion. scope LastSegment plays once up to loop.start (the start time of the last path segment) and then repeats only [loop.start, duration], including clips and events in that range. Yoyo plays every other repeat backwards.",
+    "desc": "One-sentence description of a segment, clip or event. descSource manual = written by the author; auto = generated from the data (ignored when the JSON is read back).",
+    "endTarget": "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, a 3D object via the world camera; a 3D mover keeps its distance to the camera), giving actualEnd as an offset from the start. Then add (actualEnd - authoredEnd) * pathProgress to every evaluated position, where pathProgress is the travelled fraction of the total arc length (0 at the start, 1 at the end)."
   },
   "duration": 0.74571,
   "loop": {
     "count": 1,
-    "type": "Restart"
+    "type": "Restart",
+    "scope": "Whole",
+    "start": 0
+  },
+  "endTarget": {
+    "bound": false,
+    "kind": "RectTransform",
+    "hint": "",
+    "authoredEnd": [420, 640, 0]
   },
   "path": {
     "points": [
@@ -57,7 +69,8 @@
         "ease": {
           "type": "OutQuad"
         },
-        "desc": "向左上弹起"
+        "desc": "向左上弹起",
+        "descSource": "manual"
       },
       {
         "from": "apex",
@@ -69,7 +82,8 @@
         "ease": {
           "type": "InQuad"
         },
-        "desc": "加速飞向钱包"
+        "desc": "加速飞向钱包",
+        "descSource": "manual"
       }
     ]
   },
@@ -91,7 +105,8 @@
             "type": "OutBack"
           },
           "value": [1.3, 1.3, 1],
-          "desc": "弹起时放大"
+          "desc": "弹起时放大",
+          "descSource": "manual"
         },
         {
           "anchor": "apex",
@@ -103,7 +118,8 @@
             "type": "InQuad"
           },
           "value": [0.6, 0.6, 1],
-          "desc": "飞行中缩小"
+          "desc": "飞行中缩小",
+          "descSource": "manual"
         }
       ]
     },
@@ -124,7 +140,8 @@
             "type": "Linear"
           },
           "value": [0],
-          "desc": "抵达前淡出"
+          "desc": "抵达前淡出",
+          "descSource": "manual"
         }
       ]
     }
@@ -135,7 +152,8 @@
       "offset": 0,
       "time": 0.74571,
       "name": "OnCoinArrive",
-      "message": "coin arrived at wallet"
+      "message": "coin arrived at wallet",
+      "desc": "0.746 秒触发事件 OnCoinArrive：coin arrived at wallet"
     }
   ]
 }

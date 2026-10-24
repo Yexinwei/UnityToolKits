@@ -80,6 +80,23 @@ namespace Limbo.CurveMotion
         /// <summary>把求值结果写回对象。</summary>
         public virtual void WriteValue(GameObject target, Vector4 value) { }
 
+        /// <summary>
+        /// 片段目标值的一句话说明（写进 JSON 的 desc 和导出代码的注释），例如“缩放到初始的 ×1.2”。
+        /// 新增轨道类型时可重写，默认按 <see cref="Mode"/> 写成“名称 ×(…)”“名称 +(…)”“名称 → (…)”。
+        /// </summary>
+        public virtual string DescribeValue(Vector4 value)
+        {
+            var parts = new string[Dimension];
+            for (int i = 0; i < Dimension; i++) parts[i] = MotionDescriber.Num(value[i], 3);
+            string v = Dimension == 1 ? parts[0] : "(" + string.Join(", ", parts) + ")";
+            switch (Mode)
+            {
+                case ValueMode.Multiply: return DisplayName + " 变为初始的 ×" + v;
+                case ValueMode.Add: return DisplayName + " 在初始值上 +" + v;
+                default: return DisplayName + " 变为 " + v;
+            }
+        }
+
         public MotionClip AddClip(string anchor, float offset, float duration)
         {
             var clip = new MotionClip { anchor = anchor, offset = offset, duration = duration, value = DefaultValue };
