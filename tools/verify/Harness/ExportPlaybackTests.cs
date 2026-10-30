@@ -343,7 +343,7 @@ namespace Limbo.CurveMotion.Tests.Harness
                 Eval = new MotionEvaluator(data);
                 m_Parent = parent;
                 m_Ui = data.target == TargetKind.RectTransform;
-                Code = DotweenExporter.Generate(data, new DotweenExportOptions { Namespace = "Harness" }, Warnings);
+                Code = DotweenExporter.GenerateWithEventStubs(data, new DotweenExportOptions { Namespace = "Harness" }, Warnings);
                 Dump(data);
                 var assembly = Compile(Code);
                 var type = assembly.GetTypes().Single(t => t.IsPublic && t.GetMethod("Play") != null);
@@ -357,7 +357,7 @@ namespace Limbo.CurveMotion.Tests.Harness
                 if (string.IsNullOrEmpty(dir)) return;
                 Directory.CreateDirectory(dir);
                 int n = Directory.GetFiles(dir, "*.cs").Length + 1;
-                string code = DotweenExporter.Generate(data, new DotweenExportOptions { Namespace = "Check" + n });
+                string code = DotweenExporter.GenerateWithEventStubs(data, new DotweenExportOptions { Namespace = "Check" + n });
                 File.WriteAllText(Path.Combine(dir, "Export" + n + ".cs"), code);
             }
 

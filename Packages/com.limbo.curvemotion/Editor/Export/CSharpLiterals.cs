@@ -84,6 +84,15 @@ namespace Limbo.CurveMotion.Editor.Export
         /// </summary>
         public static string ClassName(string name)
         {
+            string result = Pascal(name);
+            if (result.Length == 0) return "CurveMotion";
+            if (char.IsDigit(result[0])) result = "Motion" + result;
+            return result.EndsWith("Motion", StringComparison.Ordinal) ? result : result + "Motion";
+        }
+
+        /// <summary>按非字母数字拆开、每段首字母大写后拼起来，例如 coin land → CoinLand。可能返回空串，也可能以数字开头。</summary>
+        public static string Pascal(string name)
+        {
             var sb = new StringBuilder();
             bool upper = true;
             foreach (char c in name ?? "")
@@ -96,10 +105,7 @@ namespace Limbo.CurveMotion.Editor.Export
                 sb.Append(upper ? char.ToUpperInvariant(c) : c);
                 upper = false;
             }
-            if (sb.Length == 0) return "CurveMotion";
-            if (char.IsDigit(sb[0])) sb.Insert(0, "Motion");
-            string result = sb.ToString();
-            return result.EndsWith("Motion", StringComparison.Ordinal) ? result : result + "Motion";
+            return sb.ToString();
         }
 
         /// <summary>是否是合法的 C# 标识符（不检查关键字以外的冲突）。</summary>

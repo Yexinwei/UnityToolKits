@@ -97,6 +97,7 @@ namespace UnityEngine
     {
         public static readonly System.Collections.Generic.List<string> Logs = new System.Collections.Generic.List<string>();
         public static void Log(object message) => Logs.Add(message?.ToString());
+        public static void LogWarning(object message, Object context) => Logs.Add(message?.ToString());
     }
 
     public class CanvasGroup : Component { public float alpha = 1f; }
