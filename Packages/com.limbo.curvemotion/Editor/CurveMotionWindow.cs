@@ -1148,16 +1148,11 @@ namespace Limbo.CurveMotion.Editor
             }
             else
             {
-                EditorGUI.BeginChangeCheck();
-                var pos = EditorGUILayout.Vector3Field("位置（相对起点）", p.position - data.points[0].position);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    RecordUndo("Move Path Point");
-                    if (IsUiTarget) pos.z = 0f;
-                    p.position = data.points[0].position + pos;
-                    MarkChanged();
-                }
+                PointPositionField(m_Selected, new GUIContent("位置（相对起点）"));
             }
+
+            // 时间轴上点的是路径段，选中的是段的起点；终点没有自己的段可点，在最后一段里直接给出终点。
+            if (m_Selected == data.points.Count - 2) DrawPathEnd(data);
 
             EditorGUI.BeginChangeCheck();
             var type = (PointType)EditorGUILayout.EnumPopup(new GUIContent("点类型",
@@ -1191,6 +1186,38 @@ namespace Limbo.CurveMotion.Editor
             if (m_Selected > 0 && GUILayout.Button("删除这个点")) { DeletePoint(m_Selected); GUIUtility.ExitGUI(); }
 
             if (m_Selected < data.points.Count - 1) DrawSegment(p, m_Selected, eval);
+        }
+
+        void PointPositionField(int index, GUIContent label)
+        {
+            var data = m_Asset.data;
+            var p = data.points[index];
+            EditorGUI.BeginChangeCheck();
+            var pos = EditorGUILayout.Vector3Field(label, p.position - data.points[0].position);
+            if (EditorGUI.EndChangeCheck())
+            {
+                RecordUndo("Move Path Point");
+                if (IsUiTarget) pos.z = 0f;
+                p.position = data.points[0].position + pos;
+                MarkChanged();
+            }
+        }
+
+        void DrawPathEnd(MotionData data)
+        {
+            int last = data.points.Count - 1;
+            var label = new GUIContent($"终点位置（点 {last}）", "这一段到达的点，也就是整条路径的终点，位置相对起点");
+            if (IsEndLocked)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.Vector3Field(label, data.points[last].position - data.points[0].position);
+                EditorGUILayout.LabelField($"终点跟随落点对象“{m_EndTarget.name}”，清空落点对象后可以改。", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                PointPositionField(last, label);
+            }
+            if (GUILayout.Button("选中终点（改点类型、切线）", EditorStyles.miniButton)) { Select(last); GUIUtility.ExitGUI(); }
         }
 
         void DrawSegment(PathPoint p, int index, MotionEvaluator eval)
