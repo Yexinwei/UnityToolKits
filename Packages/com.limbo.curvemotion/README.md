@@ -35,7 +35,8 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 5. 时间轴下方分两块：
    - **单段编辑**（黄色）：只改选中的那一项。路径点与路径段（点类型、计时方式、缓动、描述），片段（锚点、偏移、时长、缓动、目标值、描述），事件（名称、特效说明、锚点、偏移）。
    - **全局编辑**（蓝色）：作用于整个动效。名称、描述、循环、终点绑定。循环范围可选“整段循环”或“尾段自循环”（前面只播一次，之后只循环最后一段路径，例如飞到位后原地浮动），时间轴上会标出循环的那一截。
-   - 窗口最下方是**提示与警告**，按错误 / 警告 / 提示分类列出。
+   - 再往下是**提示与警告**（按错误 / 警告 / 提示分类列出）和**导出**（JSON、DOTween 代码、Play 模式试播三组）。各分区标题旁的 ⓘ 图标悬停可看详细说明。
+   - 整个窗口一起上下滚动，各分区按内容实际高度排开，不互相挤压。
 6. 快捷键（窗口有焦点时）：空格播放/暂停，Delete 删除选中项，Ctrl/⌘+D 复制一份，Ctrl/⌘+C / V 复制粘贴片段或事件（粘贴到播放头处）。
 7. 关掉“预览”或进入 Play 模式时对象还原；保存场景/预制体前也会先还原再保存，保存完接着预览。“停止”只是停止播放、回到 0 秒。
 8. “复制 JSON”可直接粘贴给 AI；“导出/导入 JSON”读写文件。描述框留空时自动生成描述（框下方小字），JSON 和导出代码的注释都用它。
@@ -67,7 +68,7 @@ https://github.com/Yexinwei/UnityToolKits.git?path=Packages/com.limbo.curvemotio
 - **复制 DOTween 代码**：生成的 C# 复制到剪贴板。
 - **导出 C#…**：保存成 `.cs`，类名跟文件名一致（默认由动效名生成，如 `demo-coin-fly` → `DemoCoinFlyMotion`）；存到 Assets 下会自动导入。
 - **代码命名空间**：留空放在全局命名空间，整个工程共用这个设置。
-- **Play 模式试播导出代码**：工程装了 DOTween、代码导出到 Assets 并编译完后，进入 Play 模式点它，会在预览目标（和落点对象）上真正跑一遍导出的代码，方便和编辑器预览对比；再点一次从头重播。
+- **Play 模式试播**（导出区的“试播导出代码”）：工程装了 DOTween、代码导出到 Assets 并编译完后，进入 Play 模式点它，会在预览目标（和落点对象）上真正跑一遍导出的代码，方便和编辑器预览对比；再点一次从头重播。
 
 生成的是一个静态类：
 
@@ -89,6 +90,17 @@ DemoCoinFlyMotion.Play(coinRectTransform, walletIcon, Camera.main);
 - 无限的尾段自循环由两个 Sequence 组成，返回的是前半段（播完不自动销毁），Kill 它时循环部分一起停。
 - 终点绑定时路径走完后落点对象再移动，代码不再跟随。
 - 自定义属性轨道要导出代码，需要再写一个代码生成器（见下方“新增属性轨道”），没有的会跳过并在提示与警告里说明。
+
+## 让 AI 接入（.motion.json 自动生成代码）
+
+1. 菜单 `Tools/Curve Motion/Deploy AI Integration`（部署）：在工程根目录的 `docs/` 下放规则文件 `CurveMotion-AI-Guide.md` 和部署说明 `CurveMotion-AI-Deploy.md`，并把一句话放进剪贴板。把这句发给 AI，它会按部署说明自己把规则接进 CLAUDE.md / AGENTS.md / Cursor 规则等指令文件（已有就整段更新），然后删掉部署说明。包升级后再点一次即可更新。
+2. 把编辑器“复制 JSON”的内容交给 AI，告诉它接在哪（例如“领奖时金币从奖励按钮飞到钱包”）。
+3. AI 按规则把 JSON 存成 `Assets/…/<名字>.motion.json`。Unity 刷新时包自动在同目录生成 `<类名>.cs`（不要手改）和 `<类名>.Events.cs`（填事件），AI 再写调用代码、填事件方法。
+4. 要改动效：改这个 JSON（AI 或人都行），保存后代码自动重新生成；也可以在编辑器里改好后“导出 JSON…”覆盖它（保留其中的 export 设置）。
+
+- 类名默认由文件名生成（`coin-fly.motion.json` → `CoinFlyMotion`）；在 JSON 根对象加 `"export": { "namespace": "Game.Fx", "className": "CoinFly" }` 可指定。命名空间只看 JSON，不用窗口里的设置。
+- 不生成的情况（Console 有 `[Curve Motion]` 错误）：JSON 格式错、工程没装 DOTween、工程里已有同名脚本、目标位置有不是生成出来的同名文件。装好 DOTween 后用 `Tools/Curve Motion/Regenerate Code From .motion.json` 补生成。
+- 规则全文见 [Documentation~/AI-GUIDE.md](Documentation~/AI-GUIDE.md)，部署说明见 [Documentation~/AI-DEPLOY.md](Documentation~/AI-DEPLOY.md)。
 
 ## 代码里使用
 

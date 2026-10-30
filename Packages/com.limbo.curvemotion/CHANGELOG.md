@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.7] - 2026-10-30
+- “Copy AI Guide To Project”改为部署菜单 `Tools/Curve Motion/Deploy AI Integration`：在工程根目录的 `docs/` 下放规则文件 `CurveMotion-AI-Guide.md` 和部署说明 `CurveMotion-AI-Deploy.md`（`Documentation~/AI-DEPLOY.md`），剪贴板里是发给 AI 的一句话。AI 按部署说明在仓库根和 Unity 工程根找 CLAUDE.md / AGENTS.md / GEMINI.md / Cursor / Copilot / Windsurf 的指令文件，追加带 `curve-motion` 标记的段落（已有则整段替换，没有就给自己的工具新建），确认规则文件没被忽略，删掉部署说明并汇报改动。规则文件开头提示：旁边有部署说明时先部署。
+
+## [0.6.5] - 2026-10-30
+- JSON 自动生成代码：工程 Assets 下的 `<名字>.motion.json` 导入或修改时，自动在同目录生成 DOTween 代码 `<类名>.cs`（和“导出 C#…”一致）以及事件处理文件 `<类名>.Events.cs`（只首次生成、之后只追加）。类名默认由文件名生成（`coin-fly.motion.json` → `CoinFlyMotion`），可在 JSON 根对象写 `"export": { "namespace": "…", "className": "…" }` 指定；命名空间只看 JSON，保证每台机器生成的一样。生成的代码文件头写明来源 JSON 和导出警告。JSON 解析失败、没装 DOTween、工程里已有同名脚本、目标位置有非生成的同名文件时不生成，Console 报错说明原因。
+- 窗口“导出 JSON…”默认文件名改为 `<名字>.motion.json`；存到 Assets 下立即触发生成；覆盖已有文件时保留其中的 export 设置。
+- 给 AI 的规则文件 `Documentation~/AI-GUIDE.md`：放 JSON、调用接入（Play 签名、起点、落点、停止、回调、错开播放）、事件填写、改 JSON 的字段规则和常见改法、禁止事项。菜单 `Tools/Curve Motion/Copy AI Guide To Project` 复制到工程根目录 `CurveMotion-AI-Guide.md`，并把要加进 CLAUDE.md / Cursor 规则的一句话放进剪贴板。
+- 菜单 `Tools/Curve Motion/Regenerate Code From .motion.json`：重新生成工程里所有 .motion.json 的代码（例如装好 DOTween 之后）。
+- JSON 的 `conventions` 新增 `export` 说明；`MotionJson.ToJson` 可选写出 export 块，新增 `MotionJson.ReadExport`。
+
+## [0.6.4] - 2026-10-30
+- 窗口改为整体滚动：所有分区按内容实际高度排开，不再把单段/全局编辑压在中间的小滚动区里；“提示与警告”不再固定在底部，问题全部列出不再内嵌滚动。
+- 导出区重新分组：JSON（复制 / 导出 / 导入）、DOTween 代码（命名空间、复制 / 导出 C#）、Play 模式试播，各组独立边框和色条。试播按钮不可用时下方说明原因（没装 DOTween / 不在 Play 模式 / 没有预览目标）。
+- 各分区标题后面不再放说明文字，只保留状态（如问题数）。详细用法改成标题旁的 ⓘ 图标，鼠标悬停弹出说明：对象（含快速上手）、时间轴（含 Scene 视图编辑路径和快捷键）、单段编辑、全局编辑、提示与警告，以及导出区的 JSON、DOTween 代码（含事件接入）、Play 模式试播三组；事件的“特效说明”旁也有。
+
+## [0.6.2] - 2026-10-30
+- 时间轴选中最后一段时，单段编辑里多一行“终点位置”，可以直接改整条路径的终点（终点跟随落点对象时只读）；下方“选中终点”按钮切到终点本身，改点类型和切线。之前时间轴上点段只能选中段的起点，终点只能去 Scene 视图里点。
+
 ## [0.6.1] - 2026-10-24
 - 事件接入简化：导出类改为 `partial`，每个事件名对应一个 `static void OnXxx(Transform target)`，生成在导出文件旁边的 `类名.Events.cs` 里，开发只填方法体，不用再在 `onEvent` 回调里按事件名分支。事件文件只在第一次导出时整份生成，之后重新导出只追加新事件的方法，不覆盖已写代码；改名或删除事件留下的旧方法、命名空间对不上时导出会提示。“复制 DOTween 代码”时事件方法接在代码后面。`onEvent` 参数保留为可选的额外通知。
 - 事件日志加重：未接入的事件每次触发打一条橙色加粗的 `Debug.LogWarning`（【动效事件未接入】类名 · 事件名（时间）+ 特效说明 + 该在哪个方法里实现），点日志能定位到播放的对象。

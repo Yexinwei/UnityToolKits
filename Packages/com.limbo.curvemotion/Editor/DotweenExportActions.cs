@@ -57,6 +57,9 @@ namespace Limbo.CurveMotion.Editor
 
         public static string ClassName(MotionData data) => CSharpLiterals.ClassName(data.name);
 
+        /// <summary>记下导出的类（含命名空间），“Play 模式试播”按它找类型。</summary>
+        internal static void RememberExportedClass(MotionData data, string fullName) => EditorPrefs.SetString(ExportedClassKey + data.name, fullName);
+
         // 复制时事件处理方法接在后面，一份文本就能编译。
         static string Generate(MotionData data, List<string> warnings) =>
             DotweenExporter.GenerateWithEventStubs(data, new DotweenExportOptions { Namespace = Namespace.Trim() }, warnings);
@@ -113,7 +116,7 @@ namespace Limbo.CurveMotion.Editor
         /// 导出文件旁边的事件处理文件（Foo.cs → Foo.Events.cs）：没有就整份生成，有就只追加新事件的方法，已写的代码不动。
         /// 返回文件路径。
         /// </summary>
-        static string WriteEventStubs(MotionData data, string exportPath, string className, string ns, List<string> warnings)
+        internal static string WriteEventStubs(MotionData data, string exportPath, string className, string ns, List<string> warnings)
         {
             string path = Path.Combine(Path.GetDirectoryName(exportPath), EventStubs.FileName(Path.GetFileNameWithoutExtension(exportPath)));
             if (!File.Exists(path))
@@ -236,14 +239,14 @@ namespace Limbo.CurveMotion.Editor
             kill?.Invoke(null, new[] { tween, (object)false });
         }
 
-        static void Report(List<string> warnings)
+        internal static void Report(List<string> warnings)
         {
             if (warnings.Count == 0) return;
             Debug.LogWarning("[Curve Motion] 导出 DOTween 代码时的警告：\n" + string.Join("\n", warnings));
         }
 
         /// <summary>工程 Assets 下的绝对路径转成 "Assets/…"，工程外返回 null。</summary>
-        static string ToAssetPath(string path)
+        internal static string ToAssetPath(string path)
         {
             string full = Path.GetFullPath(path).Replace('\\', '/');
             string assets = Path.GetFullPath(Application.dataPath).Replace('\\', '/');
