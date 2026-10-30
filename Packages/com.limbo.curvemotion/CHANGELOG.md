@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.6.6] - 2026-10-30
+- “Copy AI Guide To Project”改为部署菜单 `Tools/Curve Motion/Deploy AI Integration`：在工程根目录放规则文件 `CurveMotion-AI-Guide.md` 和部署说明 `CurveMotion-AI-Deploy.md`（`Documentation~/AI-DEPLOY.md`），剪贴板里是发给 AI 的一句话。AI 按部署说明在仓库根和 Unity 工程根找 CLAUDE.md / AGENTS.md / GEMINI.md / Cursor / Copilot / Windsurf 的指令文件，追加带 `curve-motion` 标记的段落（已有则整段替换，没有就给自己的工具新建），确认规则文件没被忽略，删掉部署说明并汇报改动。规则文件开头提示：旁边有部署说明时先部署。
+
 ## [0.6.5] - 2026-10-30
 - JSON 自动生成代码：工程 Assets 下的 `<名字>.motion.json` 导入或修改时，自动在同目录生成 DOTween 代码 `<类名>.cs`（和“导出 C#…”一致）以及事件处理文件 `<类名>.Events.cs`（只首次生成、之后只追加）。类名默认由文件名生成（`coin-fly.motion.json` → `CoinFlyMotion`），可在 JSON 根对象写 `"export": { "namespace": "…", "className": "…" }` 指定；命名空间只看 JSON，保证每台机器生成的一样。生成的代码文件头写明来源 JSON 和导出警告。JSON 解析失败、没装 DOTween、工程里已有同名脚本、目标位置有非生成的同名文件时不生成，Console 报错说明原因。
 - 窗口“导出 JSON…”默认文件名改为 `<名字>.motion.json`；存到 Assets 下立即触发生成；覆盖已有文件时保留其中的 export 设置。

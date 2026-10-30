@@ -2,6 +2,8 @@
 
 给 AI 编码助手（Claude Code、Cursor 等）看的规则。用户会给你一段动效 JSON（由 Curve Motion 编辑器导出），让你把它放进 Unity 工程、接到指定的地方。照下面做。
 
+> 本文件旁边（Unity 工程根目录）如果有 `CurveMotion-AI-Deploy.md`，说明还没部署或刚升级：先按它做完部署，再继续用户的任务。
+
 ## 0. 原则
 
 - **C# 动效代码不要自己写。** 把 JSON 存成 `<名字>.motion.json` 放进 `Assets/`，Unity 刷新时 Curve Motion 包会自动在同目录生成代码，结果和编辑器预览完全一致。你负责：放 JSON、写调用代码、填事件方法。

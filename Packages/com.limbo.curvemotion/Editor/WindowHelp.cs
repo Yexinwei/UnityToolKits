@@ -44,7 +44,7 @@ namespace Limbo.CurveMotion.Editor
             "JSON 是动效的完整数据，也是给 AI 读的格式：每个路径段、片段、事件都带一句描述，根节点有整段概括，AI 不读代码也能看懂动效。\n" +
             "复制 JSON：复制到剪贴板，直接贴给 AI 解释或修改。\n" +
             "导出 JSON…：保存成 .motion.json 文件。存到工程 Assets 下时，同目录会自动生成 DOTween 代码（和“导出 C#…”一样），之后改这个 JSON 代码会跟着重新生成；覆盖已有文件时保留它里面的 export 设置（命名空间、类名）。\n" +
-            "让 AI 接入：菜单 Tools/Curve Motion/Copy AI Guide To Project 把规则文件复制到工程根目录，AI 照着放 JSON、写调用代码、填事件方法。\n" +
+            "让 AI 接入：菜单 Tools/Curve Motion/Deploy AI Integration，把弹窗里那句话发给 AI，它会自己把规则接进 CLAUDE.md 等文件；之后 AI 照规则放 JSON、写调用代码、填事件方法。\n" +
             "导入 JSON…：用 .json 文件替换当前资产里的动效数据，可撤销，常用来把 AI 改过的 JSON 贴回来。自动生成的描述不读回；上次编辑的场景和对象不受影响；格式不对或版本比包新时报错、不改动。想要一份新动效，先“新建”再导入。";
 
         public const string Code =
