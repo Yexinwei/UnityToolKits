@@ -40,7 +40,6 @@ namespace Limbo.CurveMotion.Editor
         [SerializeField] bool m_GridSnap;
         [SerializeField] float m_GridSizeUi = 10f;
         [SerializeField] float m_GridSize3D = 0.1f;
-        [SerializeField] Vector2 m_ProblemScroll;
 
         bool m_Playing;
         bool m_EndSyncFailed;
@@ -878,36 +877,47 @@ namespace Limbo.CurveMotion.Editor
 
         // ---------------------------------------------------------------- 界面
 
+        /// <summary>整个窗口一起滚动，各分区按内容的实际高度排开，不互相挤压。</summary>
         void OnGUI()
         {
-            WindowSection.Begin("对象", "动效资产、在谁身上预览、飞到哪里", WindowSection.ObjectAccent);
+            // 只要竖直滚动条：内容宽度跟着窗口走，不出现横向滚动。
+            m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll, GUIStyle.none, GUI.skin.verticalScrollbar);
+            WindowSection.Begin("对象", WindowSection.ObjectAccent);
             DrawHeader();
             if (m_Asset == null)
             {
                 EditorGUILayout.HelpBox("选择一个 Motion Asset，或点“新建”。也可以在 Project 窗口双击 Motion Asset 打开。", MessageType.Info);
                 if (GUILayout.Button("打开测试场景（自带示例动效）")) TestSceneBuilder.OpenTestScene();
                 WindowSection.End();
-                return;
             }
-            WindowSection.End();
+            else
+            {
+                WindowSection.End();
 
-            ClampSelection();
-            HandleShortcuts();
+                // 头部可能刚换了资产，之后再校正选中项；快捷键放在头部之后，头部的对象框先拿到按键。
+                ClampSelection();
+                HandleShortcuts();
 
-            WindowSection.Begin("时间轴", "双击空白处添加，右键更多操作，空格播放/暂停", WindowSection.TimelineAccent);
-            DrawToolbar();
-            m_Timeline.Draw(this);
-            WindowSection.End();
+                WindowSection.Begin("时间轴", WindowSection.TimelineAccent);
+                DrawToolbar();
+                m_Timeline.Draw(this);
+                WindowSection.End();
 
-            m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
-            DrawSingleEdit();
-            DrawGlobalEdit();
-            GUILayout.Space(4f);
+                DrawSingleEdit();
+                DrawGlobalEdit();
+                DrawProblems();
+                DrawFooter();
+            }
+            DrawHelp();
+            GUILayout.Space(6f);
             EditorGUILayout.EndScrollView();
+        }
 
-            DrawProblems();
-            DrawFooter();
-            GUILayout.Space(4f);
+        void DrawHelp()
+        {
+            WindowSection.Begin("说明", WindowSection.HelpAccent);
+            WindowHelp.Draw();
+            WindowSection.End();
         }
 
         /// <summary>窗口获得焦点时的快捷键：Delete 删除、Ctrl/⌘+D 复制一份、Ctrl/⌘+C/V 复制粘贴、空格播放。</summary>
@@ -1107,7 +1117,7 @@ namespace Limbo.CurveMotion.Editor
         void DrawSingleEdit()
         {
             var data = m_Asset.data;
-            WindowSection.Begin("单段编辑 · " + SelectionName(data), "只改选中的这一项", WindowSection.SingleAccent);
+            WindowSection.Begin("单段编辑 · " + SelectionName(data), WindowSection.SingleAccent);
             if (m_SelClip >= 0) DrawClipInspector(data);
             else if (m_SelTrack >= 0) DrawTrackInspector(data);
             else if (m_SelEvent >= 0) DrawEventInspector(data);
@@ -1517,7 +1527,7 @@ namespace Limbo.CurveMotion.Editor
         {
             var data = m_Asset.data;
             var eval = Evaluator;
-            WindowSection.Begin("全局编辑 · 整个动效", "影响整段动效", WindowSection.GlobalAccent);
+            WindowSection.Begin("全局编辑 · 整个动效", WindowSection.GlobalAccent);
 
             EditorGUI.BeginChangeCheck();
             string name = EditorGUILayout.TextField("名称", data.name ?? "");
@@ -1679,7 +1689,7 @@ namespace Limbo.CurveMotion.Editor
             return string.IsNullOrEmpty(name) ? Path.GetFileNameWithoutExtension(EditContextStore.ContainerPath(container)) : name;
         }
 
-        /// <summary>提示与警告单独一块，固定在窗口下方，不跟着上面的内容滚走。</summary>
+        /// <summary>提示与警告：全部列出，标题右边是各级问题的数量。</summary>
         void DrawProblems()
         {
             var problems = CollectProblems();
@@ -1700,11 +1710,8 @@ namespace Limbo.CurveMotion.Editor
             }
             else
             {
-                bool scroll = problems.Count > 3;
-                if (scroll) m_ProblemScroll = EditorGUILayout.BeginScrollView(m_ProblemScroll, GUILayout.Height(76f));
                 foreach (var p in problems)
                     GUILayout.Label(new GUIContent(" " + p.text, ProblemIcon(p.type)), ProblemStyle);
-                if (scroll) EditorGUILayout.EndScrollView();
             }
             WindowSection.End();
         }
@@ -1715,46 +1722,54 @@ namespace Limbo.CurveMotion.Editor
             return EditorGUIUtility.IconContent(name).image;
         }
 
+        /// <summary>导出：JSON、DOTween 代码、Play 模式试播三组分开，各组做什么见“说明”。</summary>
         void DrawFooter()
         {
-            WindowSection.Begin("导出", "JSON 给 AI 读；DOTween 代码直接放进工程", WindowSection.ExportAccent);
+            WindowSection.Begin("导出", WindowSection.ExportAccent);
+
+            WindowSection.BeginGroup("JSON", WindowSection.JsonAccent);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("复制 JSON"))
+                if (GUILayout.Button(new GUIContent("复制 JSON", "复制到剪贴板，可以直接贴给 AI")))
                 {
                     EditorGUIUtility.systemCopyBuffer = MotionJson.ToJson(m_Asset.data);
                     ShowNotification(new GUIContent("JSON 已复制到剪贴板"));
                 }
-                if (GUILayout.Button("导出 JSON…")) ExportJson();
-                if (GUILayout.Button("导入 JSON…")) ImportJson();
+                if (GUILayout.Button(new GUIContent("导出 JSON…", "保存成 .json 文件"))) ExportJson();
+                if (GUILayout.Button(new GUIContent("导入 JSON…", "用 .json 文件替换当前资产里的动效数据，可撤销"))) ImportJson();
             }
+            WindowSection.EndGroup();
+
+            WindowSection.BeginGroup("DOTween 代码", WindowSection.CodeAccent);
+            EditorGUI.BeginChangeCheck();
+            string ns = EditorGUILayout.DelayedTextField(new GUIContent("代码命名空间", "留空为全局命名空间，整个工程共用"), DotweenExportActions.Namespace);
+            if (EditorGUI.EndChangeCheck()) DotweenExportActions.Namespace = ns.Trim();
             using (new EditorGUILayout.HorizontalScope())
             {
-                var copyTip = new GUIContent("复制 DOTween 代码", $"生成静态类 {DotweenExportActions.ClassName(m_Asset.data)}，调用 Play(target) 播放，结果与预览一致");
-                if (GUILayout.Button(copyTip)) DotweenExportActions.Copy(this, m_Asset.data);
-                if (GUILayout.Button(new GUIContent("导出 C#…", "保存成 .cs 文件，类名跟文件名一致；存到 Assets 下会自动导入"))) DotweenExportActions.Export(this, m_Asset.data);
+                string cls = DotweenExportActions.ClassName(m_Asset.data);
+                if (GUILayout.Button(new GUIContent("复制 DOTween 代码", $"复制静态类 {cls}（含事件处理方法）"))) DotweenExportActions.Copy(this, m_Asset.data);
+                if (GUILayout.Button(new GUIContent("导出 C#…", "保存成 .cs 文件，类名跟文件名一致；有事件时旁边生成 类名.Events.cs"))) DotweenExportActions.Export(this, m_Asset.data);
             }
-            EditorGUI.BeginChangeCheck();
-            string ns = EditorGUILayout.DelayedTextField(new GUIContent("代码命名空间", "导出代码放进这个命名空间，留空为全局。整个工程共用。"), DotweenExportActions.Namespace);
-            if (EditorGUI.EndChangeCheck()) DotweenExportActions.Namespace = ns.Trim();
             if (!DotweenExportActions.HasDotween)
-            {
                 EditorGUILayout.LabelField("本工程没装 DOTween：代码可以复制或导出到工程外，放进 Assets 会编译报错。", EditorStyles.wordWrappedMiniLabel);
-            }
-            else
+            WindowSection.EndGroup();
+
+            WindowSection.BeginGroup("Play 模式试播", WindowSection.RunAccent);
+            string blocker = !DotweenExportActions.HasDotween ? "需要先在工程里装 DOTween。"
+                : !EditorApplication.isPlaying ? "进入 Play 模式后可用，先“导出 C#…”到 Assets 下并等编译完。"
+                : m_Target == null ? "先指定预览目标。"
+                : null;
+            using (new EditorGUI.DisabledScope(blocker != null))
             {
-                using (new EditorGUI.DisabledScope(!EditorApplication.isPlaying || m_Target == null))
+                if (GUILayout.Button(new GUIContent("试播导出代码", "在预览目标上用导出的类真正跑一遍 DOTween；再点一次从头重播")))
                 {
-                    var runTip = new GUIContent("Play 模式试播导出代码", EditorApplication.isPlaying
-                        ? "在预览目标上用导出到 Assets 的类真正跑一遍 DOTween，和预览对比；再点一次从头重播"
-                        : "进入 Play 模式后可用：先“导出 C#…”到 Assets 下");
-                    if (GUILayout.Button(runTip))
-                    {
-                        StopPreview();
-                        DotweenExportActions.RunInPlayMode(this, m_Asset.data, m_Target, m_EndTarget, m_WorldCamera);
-                    }
+                    StopPreview();
+                    DotweenExportActions.RunInPlayMode(this, m_Asset.data, m_Target, m_EndTarget, m_WorldCamera);
                 }
             }
+            if (blocker != null) EditorGUILayout.LabelField(blocker, EditorStyles.wordWrappedMiniLabel);
+            WindowSection.EndGroup();
+
             WindowSection.End();
         }
 

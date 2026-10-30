@@ -4,8 +4,9 @@ using UnityEngine;
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// 编辑器窗口的分区：带色条标题的卡片，让“对象 / 时间轴 / 单段编辑 / 全局编辑 / 提示与警告 / 导出”一眼分得开。
-    /// 用法：Begin(...) 画内容，End()。中途 ExitGUI 也没关系，IMGUI 会丢弃本次剩余的布局。
+    /// 编辑器窗口的分区：带色条标题的卡片，让“对象 / 时间轴 / 单段编辑 / 全局编辑 / 提示与警告 / 导出 / 说明”一眼分得开。
+    /// 标题后面只放状态（例如问题数），说明文字统一放在“说明”分区。
+    /// 用法：Begin(...) 画内容，End()；卡片里再分组用 BeginGroup / EndGroup。中途 ExitGUI 也没关系，IMGUI 会丢弃本次剩余的布局。
     /// </summary>
     internal static class WindowSection
     {
@@ -17,6 +18,10 @@ namespace Limbo.CurveMotion.Editor
         public static readonly Color WarningAccent = new Color(1f, 0.65f, 0.2f, 1f);
         public static readonly Color OkAccent = new Color(0.4f, 0.8f, 0.45f, 1f);
         public static readonly Color ExportAccent = new Color(0.6f, 0.6f, 0.6f, 1f);
+        public static readonly Color JsonAccent = new Color(0.3f, 0.8f, 0.7f, 1f);
+        public static readonly Color CodeAccent = new Color(0.72f, 0.5f, 1f, 1f);
+        public static readonly Color RunAccent = new Color(0.4f, 0.8f, 0.45f, 1f);
+        public static readonly Color HelpAccent = new Color(0.55f, 0.75f, 0.95f, 1f);
 
         const float HeaderHeight = 22f;
         const int Pad = 6;
@@ -24,6 +29,7 @@ namespace Limbo.CurveMotion.Editor
         static GUIStyle s_Box;
         static GUIStyle s_Title;
         static GUIStyle s_Subtitle;
+        static GUIStyle s_Group;
 
         static GUIStyle Box => s_Box ?? (s_Box = new GUIStyle(EditorStyles.helpBox)
         {
@@ -35,8 +41,17 @@ namespace Limbo.CurveMotion.Editor
 
         static GUIStyle Subtitle => s_Subtitle ?? (s_Subtitle = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight });
 
+        static GUIStyle Group => s_Group ?? (s_Group = new GUIStyle(EditorStyles.helpBox)
+        {
+            padding = new RectOffset(10, 6, 2, 6),
+            margin = new RectOffset(0, 0, 4, 4),
+        });
+
         static Color LineColor => EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.12f) : new Color(0f, 0f, 0f, 0.15f);
 
+        public static void Begin(string title, Color accent) => Begin(title, null, accent);
+
+        /// <summary>subtitle 是靠右的状态文字（例如“错误 1 · 警告 2”），不是说明。</summary>
         public static void Begin(string title, string subtitle, Color accent)
         {
             GUILayout.Space(5f);
@@ -58,6 +73,22 @@ namespace Limbo.CurveMotion.Editor
         }
 
         public static void End() => EditorGUILayout.EndVertical();
+
+        /// <summary>卡片里的一组：自己的边框、左侧色条和粗体标题，组与组之间分得开。</summary>
+        public static void BeginGroup(string title, Color accent)
+        {
+            var rect = EditorGUILayout.BeginVertical(Group);
+            if (Event.current.type == EventType.Repaint)
+            {
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, 4f, rect.height), accent);
+                EditorGUI.DrawRect(new Rect(rect.x + 4f, rect.y, rect.width - 4f, 20f), new Color(accent.r, accent.g, accent.b, EditorGUIUtility.isProSkin ? 0.1f : 0.16f));
+            }
+            var r = GUILayoutUtility.GetRect(10f, 18f, GUILayout.ExpandWidth(true));
+            GUI.Label(r, title, EditorStyles.boldLabel);
+            GUILayout.Space(2f);
+        }
+
+        public static void EndGroup() => EditorGUILayout.EndVertical();
 
         /// <summary>卡片里的小标题，下面带一条细线。</summary>
         public static void SubHeading(string text)
