@@ -93,7 +93,7 @@ DemoCoinFlyMotion.Play(coinRectTransform, walletIcon, Camera.main);
 
 ## 让 AI 接入（.motion.json 自动生成代码）
 
-1. 菜单 `Tools/Curve Motion/Deploy AI Integration`（部署）：在工程根目录放规则文件 `CurveMotion-AI-Guide.md` 和部署说明 `CurveMotion-AI-Deploy.md`，并把一句话放进剪贴板。把这句发给 AI，它会按部署说明自己把规则接进 CLAUDE.md / AGENTS.md / Cursor 规则等指令文件（已有就整段更新），然后删掉部署说明。包升级后再点一次即可更新。
+1. 菜单 `Tools/Curve Motion/Deploy AI Integration`（部署）：在工程根目录的 `docs/` 下放规则文件 `CurveMotion-AI-Guide.md` 和部署说明 `CurveMotion-AI-Deploy.md`，并把一句话放进剪贴板。把这句发给 AI，它会按部署说明自己把规则接进 CLAUDE.md / AGENTS.md / Cursor 规则等指令文件（已有就整段更新），然后删掉部署说明。包升级后再点一次即可更新。
 2. 把编辑器“复制 JSON”的内容交给 AI，告诉它接在哪（例如“领奖时金币从奖励按钮飞到钱包”）。
 3. AI 按规则把 JSON 存成 `Assets/…/<名字>.motion.json`。Unity 刷新时包自动在同目录生成 `<类名>.cs`（不要手改）和 `<类名>.Events.cs`（填事件），AI 再写调用代码、填事件方法。
 4. 要改动效：改这个 JSON（AI 或人都行），保存后代码自动重新生成；也可以在编辑器里改好后“导出 JSON…”覆盖它（保留其中的 export 设置）。

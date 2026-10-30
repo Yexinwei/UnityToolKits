@@ -2,7 +2,7 @@
 
 给 AI 编码助手（Claude Code、Cursor 等）看的规则。用户会给你一段动效 JSON（由 Curve Motion 编辑器导出），让你把它放进 Unity 工程、接到指定的地方。照下面做。
 
-> 本文件旁边（Unity 工程根目录）如果有 `CurveMotion-AI-Deploy.md`，说明还没部署或刚升级：先按它做完部署，再继续用户的任务。
+> 本文件旁边（Unity 工程根目录的 `docs/`）如果有 `CurveMotion-AI-Deploy.md`，说明还没部署或刚升级：先按它做完部署，再继续用户的任务。
 
 ## 0. 原则
 

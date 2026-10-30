@@ -1,6 +1,6 @@
 # Curve Motion · AI 规则部署
 
-给 AI 编码助手看的一次性任务。用户在 Unity 里点了 `Tools/Curve Motion/Deploy AI Integration`，工程根目录（`Assets` 的上一级）多了两个文件：
+给 AI 编码助手看的一次性任务。用户在 Unity 里点了 `Tools/Curve Motion/Deploy AI Integration`，Unity 工程根目录（`Assets` 的上一级）的 `docs/` 下多了两个文件：
 
 - `CurveMotion-AI-Guide.md`：动效接入规则，长期保留。
 - `CurveMotion-AI-Deploy.md`：就是本文件，部署完删掉。
@@ -9,7 +9,7 @@
 
 ## 1. 找到要改的指令文件
 
-1. 确定两个目录：**Unity 工程根目录**（本文件所在目录）和 **git 仓库根目录**（`git rev-parse --show-toplevel`；不是 git 仓库时就等于 Unity 工程根目录）。两者可能不同，例如仓库根下有一层 Unity 工程目录。
+1. 确定两个目录：**Unity 工程根目录**（本文件所在 `docs/` 的上一级）和 **git 仓库根目录**（`git rev-parse --show-toplevel`；不是 git 仓库时就等于 Unity 工程根目录）。两者可能不同，例如仓库根下有一层 Unity 工程目录。
 2. 在 git 仓库根目录和 Unity 工程根目录里找这些文件（存在哪个改哪个，都要改）：
    - `CLAUDE.md`（Claude Code）
    - `AGENTS.md`（Codex 等）
@@ -21,7 +21,7 @@
 
 ## 2. 写入的内容
 
-在每个要改的文件**末尾**追加下面这段（`<规则路径>` 换成从该指令文件所在目录到 `CurveMotion-AI-Guide.md` 的相对路径，例如同目录就是 `CurveMotion-AI-Guide.md`，Unity 工程在子目录 `Game/` 时是 `Game/CurveMotion-AI-Guide.md`）：
+在每个要改的文件**末尾**追加下面这段（`<规则路径>` 换成从该指令文件所在目录到 `docs/CurveMotion-AI-Guide.md` 的相对路径，例如指令文件在 Unity 工程根目录时是 `docs/CurveMotion-AI-Guide.md`，Unity 工程在仓库子目录 `Game/` 而指令文件在仓库根时是 `Game/docs/CurveMotion-AI-Guide.md`）：
 
 ```markdown
 <!-- curve-motion:begin -->
@@ -52,9 +52,9 @@ alwaysApply: false
 
 ## 4. 收尾
 
-1. 确认 `CurveMotion-AI-Guide.md` 没有被 `.gitignore` 忽略（团队成员和其他 AI 会话要能读到）。被忽略的话告诉用户，不要自行改 `.gitignore`。
-2. 删除本文件 `CurveMotion-AI-Deploy.md`。
-3. 向用户汇报：改了或新建了哪些文件（路径）、写入的规则路径，并提醒把这些改动和 `CurveMotion-AI-Guide.md` 一起提交到版本库。
+1. 确认 `docs/CurveMotion-AI-Guide.md` 没有被 `.gitignore` 忽略（团队成员和其他 AI 会话要能读到）。被忽略的话告诉用户，不要自行改 `.gitignore`。
+2. 删除本文件 `docs/CurveMotion-AI-Deploy.md`（`docs/` 目录保留）。
+3. 向用户汇报：改了或新建了哪些文件（路径）、写入的规则路径，并提醒把这些改动和 `docs/CurveMotion-AI-Guide.md` 一起提交到版本库。
 4. 不要提交、不要推送，除非用户要求。
 
-以后 Curve Motion 包升级后，用户会再点一次部署菜单：`CurveMotion-AI-Guide.md` 会被更新，本文件会重新出现，照样执行即可（已有的段落整段替换）。
+以后 Curve Motion 包升级后，用户会再点一次部署菜单：`docs/CurveMotion-AI-Guide.md` 会被更新，本文件会重新出现，照样执行即可（已有的段落整段替换）。
