@@ -882,7 +882,7 @@ namespace Limbo.CurveMotion.Editor
         {
             // 只要竖直滚动条：内容宽度跟着窗口走，不出现横向滚动。
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll, GUIStyle.none, GUI.skin.verticalScrollbar);
-            WindowSection.Begin("对象", WindowSection.ObjectAccent);
+            WindowSection.Begin("对象", WindowSection.ObjectAccent, WindowHelp.Object);
             DrawHeader();
             if (m_Asset == null)
             {
@@ -898,7 +898,7 @@ namespace Limbo.CurveMotion.Editor
                 ClampSelection();
                 HandleShortcuts();
 
-                WindowSection.Begin("时间轴", WindowSection.TimelineAccent);
+                WindowSection.Begin("时间轴", WindowSection.TimelineAccent, WindowHelp.Timeline);
                 DrawToolbar();
                 m_Timeline.Draw(this);
                 WindowSection.End();
@@ -908,16 +908,8 @@ namespace Limbo.CurveMotion.Editor
                 DrawProblems();
                 DrawFooter();
             }
-            DrawHelp();
             GUILayout.Space(6f);
             EditorGUILayout.EndScrollView();
-        }
-
-        void DrawHelp()
-        {
-            WindowSection.Begin("说明", WindowSection.HelpAccent);
-            WindowHelp.Draw();
-            WindowSection.End();
         }
 
         /// <summary>窗口获得焦点时的快捷键：Delete 删除、Ctrl/⌘+D 复制一份、Ctrl/⌘+C/V 复制粘贴、空格播放。</summary>
@@ -1117,7 +1109,7 @@ namespace Limbo.CurveMotion.Editor
         void DrawSingleEdit()
         {
             var data = m_Asset.data;
-            WindowSection.Begin("单段编辑 · " + SelectionName(data), WindowSection.SingleAccent);
+            WindowSection.Begin("单段编辑 · " + SelectionName(data), WindowSection.SingleAccent, WindowHelp.Single);
             if (m_SelClip >= 0) DrawClipInspector(data);
             else if (m_SelTrack >= 0) DrawTrackInspector(data);
             else if (m_SelEvent >= 0) DrawEventInspector(data);
@@ -1489,12 +1481,11 @@ namespace Limbo.CurveMotion.Editor
                 EditorGUI.DrawRect(box, new Color(accent.r, accent.g, accent.b, EditorGUIUtility.isProSkin ? 0.12f : 0.18f));
                 EditorGUI.DrawRect(new Rect(box.x, box.y, 4f, box.height), accent);
             }
-            EditorGUILayout.LabelField("特效说明（写给开发）", EditorStyles.boldLabel);
+            WindowSection.LabelWithInfo("特效说明（写给开发）", WindowHelp.EventMessage);
+            // 按输入前的内容决定是否显示空提示，本次事件的布局与 Layout 时一致。
+            bool empty = string.IsNullOrEmpty(message);
             message = EditorGUILayout.TextArea(message, s_MessageArea, GUILayout.MinHeight(48f));
-            EditorGUILayout.LabelField(string.IsNullOrEmpty(message)
-                    ? "建议写清楚这里要播的特效、音效或要做的事。"
-                    : "导出后写进事件方法的注释；开发接入前，每次触发都会在 Console 打一条橙色警告带上这段话。",
-                EditorStyles.wordWrappedMiniLabel);
+            if (empty) EditorGUILayout.LabelField("建议写清楚这里要播的特效、音效或要做的事。", EditorStyles.wordWrappedMiniLabel);
             EditorGUILayout.EndVertical();
             GUILayout.Space(2f);
             return message;
@@ -1527,7 +1518,7 @@ namespace Limbo.CurveMotion.Editor
         {
             var data = m_Asset.data;
             var eval = Evaluator;
-            WindowSection.Begin("全局编辑 · 整个动效", WindowSection.GlobalAccent);
+            WindowSection.Begin("全局编辑 · 整个动效", WindowSection.GlobalAccent, WindowHelp.Global);
 
             EditorGUI.BeginChangeCheck();
             string name = EditorGUILayout.TextField("名称", data.name ?? "");
@@ -1703,7 +1694,7 @@ namespace Limbo.CurveMotion.Editor
             var accent = errors > 0 ? WindowSection.ErrorAccent : warnings > 0 ? WindowSection.WarningAccent : WindowSection.OkAccent;
             string subtitle = problems.Count == 0 ? "一切正常" : $"错误 {errors} · 警告 {warnings} · 提示 {infos}";
 
-            WindowSection.Begin("提示与警告", subtitle, accent);
+            WindowSection.Begin("提示与警告", subtitle, accent, WindowHelp.Problems);
             if (problems.Count == 0)
             {
                 EditorGUILayout.LabelField("没有错误或警告。", EditorStyles.miniLabel);
@@ -1722,12 +1713,12 @@ namespace Limbo.CurveMotion.Editor
             return EditorGUIUtility.IconContent(name).image;
         }
 
-        /// <summary>导出：JSON、DOTween 代码、Play 模式试播三组分开，各组做什么见“说明”。</summary>
+        /// <summary>导出：JSON、DOTween 代码、Play 模式试播三组分开，各组做什么见组标题旁的 ⓘ。</summary>
         void DrawFooter()
         {
             WindowSection.Begin("导出", WindowSection.ExportAccent);
 
-            WindowSection.BeginGroup("JSON", WindowSection.JsonAccent);
+            WindowSection.BeginGroup("JSON", WindowSection.JsonAccent, WindowHelp.Json);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button(new GUIContent("复制 JSON", "复制到剪贴板，可以直接贴给 AI")))
@@ -1740,7 +1731,7 @@ namespace Limbo.CurveMotion.Editor
             }
             WindowSection.EndGroup();
 
-            WindowSection.BeginGroup("DOTween 代码", WindowSection.CodeAccent);
+            WindowSection.BeginGroup("DOTween 代码", WindowSection.CodeAccent, WindowHelp.Code);
             EditorGUI.BeginChangeCheck();
             string ns = EditorGUILayout.DelayedTextField(new GUIContent("代码命名空间", "留空为全局命名空间，整个工程共用"), DotweenExportActions.Namespace);
             if (EditorGUI.EndChangeCheck()) DotweenExportActions.Namespace = ns.Trim();
@@ -1754,7 +1745,7 @@ namespace Limbo.CurveMotion.Editor
                 EditorGUILayout.LabelField("本工程没装 DOTween：代码可以复制或导出到工程外，放进 Assets 会编译报错。", EditorStyles.wordWrappedMiniLabel);
             WindowSection.EndGroup();
 
-            WindowSection.BeginGroup("Play 模式试播", WindowSection.RunAccent);
+            WindowSection.BeginGroup("Play 模式试播", WindowSection.RunAccent, WindowHelp.Run);
             string blocker = !DotweenExportActions.HasDotween ? "需要先在工程里装 DOTween。"
                 : !EditorApplication.isPlaying ? "进入 Play 模式后可用，先“导出 C#…”到 Assets 下并等编译完。"
                 : m_Target == null ? "先指定预览目标。"

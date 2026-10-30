@@ -4,8 +4,8 @@ using UnityEngine;
 namespace Limbo.CurveMotion.Editor
 {
     /// <summary>
-    /// 编辑器窗口的分区：带色条标题的卡片，让“对象 / 时间轴 / 单段编辑 / 全局编辑 / 提示与警告 / 导出 / 说明”一眼分得开。
-    /// 标题后面只放状态（例如问题数），说明文字统一放在“说明”分区。
+    /// 编辑器窗口的分区：带色条标题的卡片，让“对象 / 时间轴 / 单段编辑 / 全局编辑 / 提示与警告 / 导出”一眼分得开。
+    /// 标题后面只放状态（例如问题数）；说明文字放在标题旁的 ⓘ 图标里，鼠标悬停时显示。
     /// 用法：Begin(...) 画内容，End()；卡片里再分组用 BeginGroup / EndGroup。中途 ExitGUI 也没关系，IMGUI 会丢弃本次剩余的布局。
     /// </summary>
     internal static class WindowSection
@@ -21,7 +21,6 @@ namespace Limbo.CurveMotion.Editor
         public static readonly Color JsonAccent = new Color(0.3f, 0.8f, 0.7f, 1f);
         public static readonly Color CodeAccent = new Color(0.72f, 0.5f, 1f, 1f);
         public static readonly Color RunAccent = new Color(0.4f, 0.8f, 0.45f, 1f);
-        public static readonly Color HelpAccent = new Color(0.55f, 0.75f, 0.95f, 1f);
 
         const float HeaderHeight = 22f;
         const int Pad = 6;
@@ -49,10 +48,10 @@ namespace Limbo.CurveMotion.Editor
 
         static Color LineColor => EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.12f) : new Color(0f, 0f, 0f, 0.15f);
 
-        public static void Begin(string title, Color accent) => Begin(title, null, accent);
+        public static void Begin(string title, Color accent, string help = null) => Begin(title, null, accent, help);
 
-        /// <summary>subtitle 是靠右的状态文字（例如“错误 1 · 警告 2”），不是说明。</summary>
-        public static void Begin(string title, string subtitle, Color accent)
+        /// <summary>subtitle 是靠右的状态文字（例如“错误 1 · 警告 2”），不是说明；说明放 help，显示成标题旁的 ⓘ。</summary>
+        public static void Begin(string title, string subtitle, Color accent, string help = null)
         {
             GUILayout.Space(5f);
             EditorGUILayout.BeginVertical(Box);
@@ -66,7 +65,11 @@ namespace Limbo.CurveMotion.Editor
             }
             // 副标题靠右、按需让出宽度，标题用剩下的部分（太长时截断，不重叠）。
             float subWidth = string.IsNullOrEmpty(subtitle) ? 0f : Mathf.Min(Subtitle.CalcSize(new GUIContent(subtitle)).x, r.width * 0.45f);
-            GUI.Label(new Rect(r.x + 2f, r.y, r.width - subWidth - 8f, r.height), title, Title);
+            float helpWidth = string.IsNullOrEmpty(help) ? 0f : InfoSize + 4f;
+            float titleWidth = Mathf.Min(Title.CalcSize(new GUIContent(title)).x, r.width - subWidth - helpWidth - 8f);
+            GUI.Label(new Rect(r.x + 2f, r.y, titleWidth, r.height), title, Title);
+            if (helpWidth > 0f)
+                Info(new Rect(r.x + 2f + titleWidth + 4f, r.y + (r.height - InfoSize) * 0.5f, InfoSize, InfoSize), help);
             if (subWidth > 0f)
                 GUI.Label(new Rect(r.xMax - subWidth, r.y, subWidth, r.height), subtitle, Subtitle);
             GUILayout.Space(3f);
@@ -74,8 +77,8 @@ namespace Limbo.CurveMotion.Editor
 
         public static void End() => EditorGUILayout.EndVertical();
 
-        /// <summary>卡片里的一组：自己的边框、左侧色条和粗体标题，组与组之间分得开。</summary>
-        public static void BeginGroup(string title, Color accent)
+        /// <summary>卡片里的一组：自己的边框、左侧色条和粗体标题，组与组之间分得开。help 显示成标题旁的 ⓘ。</summary>
+        public static void BeginGroup(string title, Color accent, string help = null)
         {
             var rect = EditorGUILayout.BeginVertical(Group);
             if (Event.current.type == EventType.Repaint)
@@ -84,8 +87,36 @@ namespace Limbo.CurveMotion.Editor
                 EditorGUI.DrawRect(new Rect(rect.x + 4f, rect.y, rect.width - 4f, 20f), new Color(accent.r, accent.g, accent.b, EditorGUIUtility.isProSkin ? 0.1f : 0.16f));
             }
             var r = GUILayoutUtility.GetRect(10f, 18f, GUILayout.ExpandWidth(true));
-            GUI.Label(r, title, EditorStyles.boldLabel);
+            if (string.IsNullOrEmpty(help))
+            {
+                GUI.Label(r, title, EditorStyles.boldLabel);
+            }
+            else
+            {
+                float w = Mathf.Min(EditorStyles.boldLabel.CalcSize(new GUIContent(title)).x, r.width - InfoSize - 4f);
+                GUI.Label(new Rect(r.x, r.y, w, r.height), title, EditorStyles.boldLabel);
+                Info(new Rect(r.x + w + 2f, r.y + (r.height - InfoSize) * 0.5f, InfoSize, InfoSize), help);
+            }
             GUILayout.Space(2f);
+        }
+
+        /// <summary>行内的粗体小标题，旁边带 ⓘ。</summary>
+        public static void LabelWithInfo(string label, string help)
+        {
+            var r = GUILayoutUtility.GetRect(10f, 18f, GUILayout.ExpandWidth(true));
+            float w = Mathf.Min(EditorStyles.boldLabel.CalcSize(new GUIContent(label)).x, r.width - InfoSize - 4f);
+            GUI.Label(new Rect(r.x, r.y, w, r.height), label, EditorStyles.boldLabel);
+            Info(new Rect(r.x + w + 2f, r.y + (r.height - InfoSize) * 0.5f, InfoSize, InfoSize), help);
+        }
+
+        const float InfoSize = 16f;
+        static Texture s_InfoIcon;
+
+        /// <summary>圆圈 i 图标，鼠标悬停时弹出说明（Unity 的 tooltip）。</summary>
+        public static void Info(Rect rect, string help)
+        {
+            if (s_InfoIcon == null) s_InfoIcon = EditorGUIUtility.IconContent("console.infoicon.sml").image;
+            GUI.Label(rect, new GUIContent(s_InfoIcon, help), GUIStyle.none);
         }
 
         public static void EndGroup() => EditorGUILayout.EndVertical();
