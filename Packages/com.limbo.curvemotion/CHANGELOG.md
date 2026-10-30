@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5] - 2026-10-30
+- JSON 自动生成代码：工程 Assets 下的 `<名字>.motion.json` 导入或修改时，自动在同目录生成 DOTween 代码 `<类名>.cs`（和“导出 C#…”一致）以及事件处理文件 `<类名>.Events.cs`（只首次生成、之后只追加）。类名默认由文件名生成（`coin-fly.motion.json` → `CoinFlyMotion`），可在 JSON 根对象写 `"export": { "namespace": "…", "className": "…" }` 指定；命名空间只看 JSON，保证每台机器生成的一样。生成的代码文件头写明来源 JSON 和导出警告。JSON 解析失败、没装 DOTween、工程里已有同名脚本、目标位置有非生成的同名文件时不生成，Console 报错说明原因。
+- 窗口“导出 JSON…”默认文件名改为 `<名字>.motion.json`；存到 Assets 下立即触发生成；覆盖已有文件时保留其中的 export 设置。
+- 给 AI 的规则文件 `Documentation~/AI-GUIDE.md`：放 JSON、调用接入（Play 签名、起点、落点、停止、回调、错开播放）、事件填写、改 JSON 的字段规则和常见改法、禁止事项。菜单 `Tools/Curve Motion/Copy AI Guide To Project` 复制到工程根目录 `CurveMotion-AI-Guide.md`，并把要加进 CLAUDE.md / Cursor 规则的一句话放进剪贴板。
+- 菜单 `Tools/Curve Motion/Regenerate Code From .motion.json`：重新生成工程里所有 .motion.json 的代码（例如装好 DOTween 之后）。
+- JSON 的 `conventions` 新增 `export` 说明；`MotionJson.ToJson` 可选写出 export 块，新增 `MotionJson.ReadExport`。
+
 ## [0.6.4] - 2026-10-30
 - 窗口改为整体滚动：所有分区按内容实际高度排开，不再把单段/全局编辑压在中间的小滚动区里；“提示与警告”不再固定在底部，问题全部列出不再内嵌滚动。
 - 导出区重新分组：JSON（复制 / 导出 / 导入）、DOTween 代码（命名空间、复制 / 导出 C#）、Play 模式试播，各组独立边框和色条。试播按钮不可用时下方说明原因（没装 DOTween / 不在 Play 模式 / 没有预览目标）。

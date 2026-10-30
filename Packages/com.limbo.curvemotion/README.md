@@ -91,6 +91,17 @@ DemoCoinFlyMotion.Play(coinRectTransform, walletIcon, Camera.main);
 - 终点绑定时路径走完后落点对象再移动，代码不再跟随。
 - 自定义属性轨道要导出代码，需要再写一个代码生成器（见下方“新增属性轨道”），没有的会跳过并在提示与警告里说明。
 
+## 让 AI 接入（.motion.json 自动生成代码）
+
+1. 菜单 `Tools/Curve Motion/Copy AI Guide To Project`：把规则文件复制到工程根目录 `CurveMotion-AI-Guide.md`，并把一句引用放进剪贴板，贴到 CLAUDE.md / AGENTS.md / Cursor 规则里。
+2. 把编辑器“复制 JSON”的内容交给 AI，告诉它接在哪（例如“领奖时金币从奖励按钮飞到钱包”）。
+3. AI 按规则把 JSON 存成 `Assets/…/<名字>.motion.json`。Unity 刷新时包自动在同目录生成 `<类名>.cs`（不要手改）和 `<类名>.Events.cs`（填事件），AI 再写调用代码、填事件方法。
+4. 要改动效：改这个 JSON（AI 或人都行），保存后代码自动重新生成；也可以在编辑器里改好后“导出 JSON…”覆盖它（保留其中的 export 设置）。
+
+- 类名默认由文件名生成（`coin-fly.motion.json` → `CoinFlyMotion`）；在 JSON 根对象加 `"export": { "namespace": "Game.Fx", "className": "CoinFly" }` 可指定。命名空间只看 JSON，不用窗口里的设置。
+- 不生成的情况（Console 有 `[Curve Motion]` 错误）：JSON 格式错、工程没装 DOTween、工程里已有同名脚本、目标位置有不是生成出来的同名文件。装好 DOTween 后用 `Tools/Curve Motion/Regenerate Code From .motion.json` 补生成。
+- 规则全文见 [Documentation~/AI-GUIDE.md](Documentation~/AI-GUIDE.md)。
+
 ## 代码里使用
 
 ```csharp

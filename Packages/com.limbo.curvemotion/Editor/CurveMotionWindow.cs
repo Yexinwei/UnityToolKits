@@ -1788,12 +1788,24 @@ namespace Limbo.CurveMotion.Editor
             EditorGUIUtility.PingObject(asset);
         }
 
+        /// <summary>
+        /// 默认文件名带 .motion.json：存到 Assets 下会自动生成代码。覆盖已有文件时保留它的 export 块（命名空间、类名），
+        /// 避免在编辑器里改完导出把 AI 或人写的生成设置冲掉。
+        /// </summary>
         void ExportJson()
         {
-            string path = EditorUtility.SaveFilePanel("导出 JSON", "", (m_Asset.data.name ?? "Motion") + ".json", "json");
+            string path = EditorUtility.SaveFilePanel("导出 JSON", "", (m_Asset.data.name ?? "Motion") + Export.MotionJsonCodeGen.Suffix, "json");
             if (string.IsNullOrEmpty(path)) return;
-            File.WriteAllText(path, MotionJson.ToJson(m_Asset.data));
-            ShowNotification(new GUIContent("已导出"));
+            string exportNs = null, exportClass = null;
+            if (File.Exists(path))
+            {
+                try { MotionJson.ReadExport(File.ReadAllText(path), out exportNs, out exportClass); }
+                catch (FormatException) { }
+            }
+            File.WriteAllText(path, MotionJson.ToJson(m_Asset.data, exportNs, exportClass));
+            string assetPath = DotweenExportActions.ToAssetPath(path);
+            if (assetPath != null) AssetDatabase.ImportAsset(assetPath);
+            ShowNotification(new GUIContent(assetPath != null && Export.MotionJsonCodeGen.IsMotionJson(assetPath) ? "已导出，代码自动生成中" : "已导出"));
         }
 
         void ImportJson()

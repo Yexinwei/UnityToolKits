@@ -11,7 +11,8 @@ namespace Limbo.CurveMotion.Serialization
     /// </summary>
     public static class MotionJson
     {
-        public static string ToJson(MotionData data)
+        /// <summary>exportNamespace / exportClassName 不为空时写出 export 块（工程里 *.motion.json 自动生成代码用），它们不属于动效数据。</summary>
+        public static string ToJson(MotionData data, string exportNamespace = null, string exportClassName = null)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
             var eval = new MotionEvaluator(data);
@@ -19,6 +20,13 @@ namespace Limbo.CurveMotion.Serialization
             w.BeginObject();
             w.Field("schemaVersion", CurveMotionInfo.SchemaVersion);
             w.Field("generator", CurveMotionInfo.PackageName);
+            if (!string.IsNullOrWhiteSpace(exportNamespace) || !string.IsNullOrWhiteSpace(exportClassName))
+            {
+                w.Name("export").BeginObject();
+                if (!string.IsNullOrWhiteSpace(exportNamespace)) w.Field("namespace", exportNamespace.Trim());
+                if (!string.IsNullOrWhiteSpace(exportClassName)) w.Field("className", exportClassName.Trim());
+                w.EndObject();
+            }
             w.Field("name", data.name ?? "");
             w.Field("description", data.description ?? "");
             w.Field("summary", MotionDescriber.Summary(data, eval));
@@ -38,6 +46,8 @@ namespace Limbo.CurveMotion.Serialization
                 "Yoyo plays every other repeat backwards.");
             w.Field("settings", "Track-specific options. alpha.source: which component the alpha is applied to. Auto = CanvasGroup if the object has one (fades its children too), " +
                 "else Graphic (Image, Text, TextMeshPro), else SpriteRenderer; CanvasGroup / Graphic / SpriteRenderer = only that component on the object.");
+            w.Field("export", "Optional. When this JSON is saved in a Unity project as <name>.motion.json, a C# class is generated next to it: " +
+                "export.className (default: <name> in PascalCase + \"Motion\") in export.namespace (default: global).");
             w.Field("desc", "One-sentence description of a segment, clip or event. descSource manual = written by the author; auto = generated from the data (ignored when the JSON is read back).");
             w.Field("endTarget", "If endTarget.bound is true, the last path point is only a design-time reference. At runtime take the bound object's position, " +
                 "convert it into this object's parent space (through screen space when endTarget.kind differs from target: a UI element via its canvas camera, " +
@@ -278,6 +288,16 @@ namespace Limbo.CurveMotion.Serialization
             ReadTracks(root, data, warnings);
             ReadEvents(root, data);
             return data;
+        }
+
+        /// <summary>读 JSON 里可选的 export 块（命名空间、类名），没有时为 null。格式错误抛 FormatException。</summary>
+        public static void ReadExport(string json, out string exportNamespace, out string exportClassName)
+        {
+            exportNamespace = exportClassName = null;
+            if (!(Json.Parse(json) is Dictionary<string, object> root)) throw new FormatException("根节点必须是对象");
+            if (!(GetObject(root, "export") is Dictionary<string, object> export)) return;
+            exportNamespace = GetString(export, "namespace", null);
+            exportClassName = GetString(export, "className", null);
         }
 
         /// <summary>旧版本数据升级到当前结构。目前只有 v1。</summary>
